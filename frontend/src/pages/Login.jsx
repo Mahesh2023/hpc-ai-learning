@@ -5,7 +5,7 @@ import { LogIn, Mail, KeyRound, AlertCircle, Cpu, Eye, EyeOff, Shield } from 'lu
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, error, setError } = useAuth();
+  const { login, loginAsGuest, error, setError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
@@ -30,12 +30,9 @@ export default function Login() {
     finally { setLoading(false); }
   };
 
-  const handleDemoLogin = async () => {
-    setLoading(true);
-    setError(null);
-    try { await login('demo@hpcai.dev', 'demo'); navigate('/', { replace: true }); }
-    catch (err) { /* error set in context */ }
-    finally { setLoading(false); }
+  const handleDemoLogin = () => {
+    loginAsGuest();
+    navigate('/', { replace: true });
   };
 
   const inputStyle = {

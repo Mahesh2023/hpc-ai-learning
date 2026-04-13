@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { BookOpen, CheckCircle2, Flame, Trophy, ArrowRight, TrendingUp, Zap, Clock } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { BookOpen, CheckCircle2, Flame, Trophy, ArrowRight, TrendingUp, Zap, Clock, LogIn } from 'lucide-react';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts';
 import { useAuth } from '../utils/auth';
 import { getDashboardAPI } from '../utils/api';
@@ -73,6 +73,14 @@ export default function Dashboard() {
           <Zap size={14} />{(stats.level || 'intermediate').charAt(0).toUpperCase() + (stats.level || 'intermediate').slice(1)} Level
         </div>
       </div>
+
+      {/* Guest mode banner */}
+      {user?.is_guest && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem 1.5rem', marginBottom: '1.5rem', borderRadius: '12px', background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)' }}>
+          <LogIn size={18} color="#f97316" />
+          <span style={{ flex: 1, fontSize: '0.875rem', color: '#f97316' }}>You are exploring as a guest. <Link to="/login" onClick={() => { localStorage.removeItem('hpc_guest_mode'); }} style={{ color: '#06b6d4', fontWeight: '600', textDecoration: 'underline' }}>Sign in</Link> or <Link to="/register" onClick={() => { localStorage.removeItem('hpc_guest_mode'); }} style={{ color: '#06b6d4', fontWeight: '600', textDecoration: 'underline' }}>create an account</Link> to save your progress.</span>
+        </div>
+      )}
 
       {/* Overall Progress */}
       <div style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.1), rgba(139,92,246,0.1))', border: '1px solid rgba(6,182,212,0.2)', borderRadius: '16px', padding: '1.5rem 2rem', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '2rem' }}>

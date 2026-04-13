@@ -14,6 +14,10 @@ export function setAccessToken(token) {
   inMemoryAccessToken = token;
 }
 
+export function isGuestUser(u) {
+  return u && u.is_guest === true;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +46,13 @@ export function AuthProvider({ children }) {
 
   // Try to restore session on mount (using refresh cookie)
   const initSession = useCallback(async () => {
+    // Check for guest mode first (no API calls needed)
+    if (localStorage.getItem('hpc_guest_mode') === 'true') {
+      setUser({ id: 'guest', username: 'Guest Explorer', email: 'guest@demo', is_guest: true });
+      setLoading(false);
+      return;
+    }
+
     try {
       // Try silent refresh first (HttpOnly cookie)
       const refreshData = await refreshTokenAPI();
@@ -119,18 +130,27 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const loginAsGuest = () => {
+    setError(null);
+    const guestUser = { id: 'guest', username: 'Guest Explorer', email: 'guest@demo', is_guest: true };
+    localStorage.setItem('hpc_guest_mode', 'true');
+    setUser(guestUser);
+  };
+
   const logout = async () => {
-    try {
-      await logoutAPI();
-    } catch { /* ignore logout API errors */ }
+    const wasGuest = user?.is_guest;
+    if (!wasGuest) {
+      try { await logoutAPI(); } catch { /* ignore */ }
+    }
     setAccessToken(null);
     localStorage.removeItem('hpc_auth_token');
+    localStorage.removeItem('hpc_guest_mode');
     setUser(null);
     setError(null);
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
   };
 
-  const value = { user, loading, error, login, register, logout, setError };
+  const value = { user, loading, error, login, register, loginAsGuest, logout, setError };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

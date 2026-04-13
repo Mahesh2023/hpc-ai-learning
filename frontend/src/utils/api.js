@@ -22,6 +22,10 @@ function getToken() {
   return getAccessToken() || localStorage.getItem('hpc_auth_token');
 }
 
+function isGuest() {
+  return localStorage.getItem('hpc_guest_mode') === 'true';
+}
+
 function buildInteractiveDirective(slug) {
   const entry = INTERACTIVE_MAP[slug];
   if (!entry) return '';
@@ -145,6 +149,7 @@ export async function logoutAPI() {
 }
 
 export async function getMeAPI() {
+  if (isGuest()) return { ...DEMO_USER, id: 'guest', username: 'Guest Explorer', email: 'guest@demo', is_guest: true };
   const data = await apiRequest('/auth/me');
   if (data) return data;
   const token = getToken();
@@ -234,9 +239,10 @@ export async function getLessonAPI(moduleId, lessonId) {
   return null;
 }
 
-// ── Progress API ──
+// ── Progress API (requires auth — guests get demo data) ──
 
 export async function getProgressAPI() {
+  if (isGuest()) return { modules: DEMO_MODULES.map((m) => ({ module_id: m.id, completion_percentage: m.completion_percentage, status: m.status })) };
   const data = await apiRequest('/progress');
   if (data) return data;
   return {
@@ -249,6 +255,7 @@ export async function getProgressAPI() {
 }
 
 export async function completeLessonAPI(moduleId, lessonId) {
+  if (isGuest()) return { success: true, message: 'Progress not saved in guest mode. Log in to track progress.' };
   const data = await apiRequest(`/modules/${moduleId}/lessons/${lessonId}/complete`, {
     method: 'POST',
   });
@@ -257,6 +264,7 @@ export async function completeLessonAPI(moduleId, lessonId) {
 }
 
 export async function submitExerciseAPI(exerciseId, answer) {
+  if (isGuest()) return { correct: true, score: 10, feedback: 'Great job! (Guest mode — log in to save scores)', explanation: 'Log in to save your exercise scores and track progress.' };
   const data = await apiRequest(`/exercises/${exerciseId}/submit`, {
     method: 'POST',
     body: JSON.stringify({ answer }),
@@ -273,12 +281,14 @@ export async function submitExerciseAPI(exerciseId, answer) {
 // ── Dashboard & Learning Path ──
 
 export async function getDashboardAPI() {
+  if (isGuest()) return DEMO_DASHBOARD;
   const data = await apiRequest('/dashboard');
   if (data) return data;
   return DEMO_DASHBOARD;
 }
 
 export async function getLearningPathAPI() {
+  if (isGuest()) return DEMO_LEARNING_PATH;
   const data = await apiRequest('/learning-path');
   if (data) return data;
   return DEMO_LEARNING_PATH;

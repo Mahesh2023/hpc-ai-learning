@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../utils/auth';
 import {
   LayoutDashboard,
@@ -11,6 +11,7 @@ import {
   Cpu,
   ChevronRight,
   FlaskConical,
+  LogIn,
 } from 'lucide-react';
 
 const navItems = [
@@ -203,6 +204,7 @@ const styles = {
 export default function Sidebar() {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [hoveredItem, setHoveredItem] = useState(null);
 
@@ -211,7 +213,7 @@ export default function Sidebar() {
     return name.split(/[_\s]/).map((w) => w[0]).join('').toUpperCase().slice(0, 2);
   };
 
-  const isDemo = localStorage.getItem('hpc_auth_token') === 'demo-token-12345';
+  const isGuestMode = user?.is_guest === true;
 
   return (
     <>
@@ -277,38 +279,59 @@ export default function Sidebar() {
           })}
         </nav>
 
-        {/* Demo indicator */}
-        {isDemo && (
+        {/* Guest mode indicator */}
+        {isGuestMode && (
           <div style={styles.demoLabel}>
-            Demo Mode \u2014 Backend Offline
+            Guest Mode — <span
+              style={{ textDecoration: 'underline', cursor: 'pointer' }}
+              onClick={() => { logout(); navigate('/login'); }}
+            >Sign in</span> to save progress
           </div>
         )}
 
         {/* User section */}
         <div style={styles.userSection}>
           <div style={styles.userCard}>
-            <div style={styles.avatar}>
+            <div style={{ ...styles.avatar, background: isGuestMode ? 'linear-gradient(135deg, #f97316, #f59e0b)' : 'linear-gradient(135deg, #06b6d4, #14b8a6)' }}>
               {getInitials(user?.username)}
             </div>
             <div style={styles.userInfo}>
               <div style={styles.userName}>{user?.username || 'User'}</div>
-              <div style={styles.userEmail}>{user?.email || ''}</div>
+              <div style={styles.userEmail}>{isGuestMode ? 'Guest Mode' : (user?.email || '')}</div>
             </div>
-            <button
-              style={styles.logoutBtn}
-              onClick={logout}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
-                e.currentTarget.style.color = '#ef4444';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = '#64748b';
-              }}
-              title="Logout"
-            >
-              <LogOut size={16} />
-            </button>
+            {isGuestMode ? (
+              <button
+                style={styles.logoutBtn}
+                onClick={() => { logout(); navigate('/login'); }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(6, 182, 212, 0.1)';
+                  e.currentTarget.style.color = '#06b6d4';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#64748b';
+                }}
+                title="Sign In"
+              >
+                <LogIn size={16} />
+              </button>
+            ) : (
+              <button
+                style={styles.logoutBtn}
+                onClick={logout}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+                  e.currentTarget.style.color = '#ef4444';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#64748b';
+                }}
+                title="Logout"
+              >
+                <LogOut size={16} />
+              </button>
+            )}
           </div>
         </div>
       </div>
