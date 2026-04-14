@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from .config import CORS_ORIGINS
 from .models.database import init_db
@@ -76,4 +77,11 @@ async def root():
 
 @app.get("/api/health")
 async def health():
-    return {"status": "healthy"}
+    try:
+        from .models.database import SessionLocal
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        return JSONResponse(status_code=503, content={"status": "unhealthy", "database": str(e)})

@@ -6,6 +6,7 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { ArrowLeft, ArrowRight, CheckCircle2, Target, ChevronRight, PanelRightOpen, PanelRightClose, BookOpen, Clock } from 'lucide-react';
 import { getLessonAPI, getModuleAPI, completeLessonAPI } from '../utils/api';
 import ExercisePanel from '../components/ExercisePanel';
+import BookmarkButton from '../components/BookmarkButton';
 import { InteractiveComponent, parseInteractiveContent } from '../components/InteractiveComponents';
 
 /**
@@ -136,7 +137,7 @@ export default function LessonViewer() {
   };
 
   return (
-    <div style={{ display: 'flex', gap: '1.5rem', maxWidth: '1400px', margin: '0 auto', animation: 'fadeIn 0.4s ease-out', minHeight: 'calc(100vh - 4rem)' }}>
+    <div className="lesson-layout" style={{ display: 'flex', gap: '1.5rem', maxWidth: '1400px', margin: '0 auto', animation: 'fadeIn 0.4s ease-out', minHeight: 'calc(100vh - 4rem)' }}>
       {/* Content Pane */}
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Breadcrumb */}
@@ -146,6 +147,7 @@ export default function LessonViewer() {
           <Link to={'/modules/' + moduleId} style={{ color: '#94a3b8', textDecoration: 'none', fontWeight: '500' }}>{mod?.title || 'Module'}</Link>
           <ChevronRight size={14} />
           <span style={{ color: '#f1f5f9', fontWeight: '600' }}>{lesson.title}</span>
+          <BookmarkButton moduleId={moduleId} lessonId={lessonId} lessonTitle={lesson.title} moduleName={mod?.title} />
         </div>
 
         {/* Top bar */}
@@ -208,7 +210,7 @@ export default function LessonViewer() {
       </div>
 
       {/* Exercise Pane */}
-      <div style={{ width: showExercises ? '420px' : '0', flexShrink: 0, transition: 'width 250ms ease, opacity 250ms ease', overflow: 'hidden', opacity: showExercises ? 1 : 0 }}>
+      <div className="exercise-sidebar" style={{ width: showExercises ? '420px' : '0', flexShrink: 0, transition: 'width 250ms ease, opacity 250ms ease', overflow: 'hidden', opacity: showExercises ? 1 : 0 }}>
         {showExercises && (
           <div style={{ position: 'sticky', top: '1rem', maxHeight: 'calc(100vh - 6rem)', overflowY: 'auto', background: '#1e293b', border: '1px solid #334155', borderRadius: '16px', padding: '1.25rem' }}>
             <ExercisePanel exercises={lesson.exercises || []} />

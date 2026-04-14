@@ -191,6 +191,7 @@ class Exercise(BaseModel):
     options: list[str] = []
     correct_answer: str = ""
     test_cases: list[dict[str, Any]] = []
+    starter_code: str = ""
 
 
 class Lesson(BaseModel):

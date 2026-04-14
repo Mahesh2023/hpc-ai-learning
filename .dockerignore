@@ -1,0 +1,36 @@
+# Version control
+.git
+.gitignore
+
+# Dependencies (rebuilt in container)
+node_modules
+__pycache__
+*.pyc
+.venv
+venv
+
+# Build output
+dist
+build
+*.egg-info
+
+# IDE / editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker / CI
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Docs / misc
+*.md
+LICENSE
+docs/

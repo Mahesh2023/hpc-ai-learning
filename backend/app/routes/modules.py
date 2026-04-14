@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from ..models.schemas import ModuleSummary, Module, Lesson
 from ..services.curriculum_loader import get_all_modules, get_module, get_lesson
+from ..routes.auth import require_user
 
 router = APIRouter(prefix="/api/modules", tags=["modules"])
 
@@ -49,3 +50,10 @@ async def lesson_detail(module_id: str, lesson_id: str):
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
     return lesson
+
+
+@router.post("/{module_id}/lessons/{lesson_id}/complete")
+async def complete_lesson_alias(module_id: str, lesson_id: str, user=Depends(require_user)):
+    """Alias for frontend compatibility — forwards to progress router."""
+    from .progress import complete_lesson
+    return await complete_lesson(module_id, lesson_id, user=user)

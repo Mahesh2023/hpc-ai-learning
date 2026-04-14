@@ -23,7 +23,7 @@ from fastapi.security import OAuth2PasswordBearer
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from ..config import ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
+from ..config import ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS, ENVIRONMENT
 from ..models.schemas import (
     UserCreate, UserLogin, TokenResponse, UserOut,
     ChangePasswordRequest, ForgotPasswordRequest, ResetPasswordRequest,
@@ -124,7 +124,7 @@ async def login(data: UserLogin, request: Request, response: Response):
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=False,  # Set to True in production (HTTPS)
+        secure=ENVIRONMENT != "development",
         samesite="lax",
         max_age=max_age,
         path="/api/auth",
@@ -173,7 +173,7 @@ async def register(data: UserCreate, request: Request, response: Response):
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=False,
+        secure=ENVIRONMENT != "development",
         samesite="lax",
         max_age=86400,
         path="/api/auth",
@@ -231,7 +231,7 @@ async def refresh(request: Request, response: Response):
         key="refresh_token",
         value=new_refresh,
         httponly=True,
-        secure=False,
+        secure=ENVIRONMENT != "development",
         samesite="lax",
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400,
         path="/api/auth",

@@ -11,14 +11,21 @@ import {
   Cpu,
   ChevronRight,
   FlaskConical,
+  Bookmark,
   LogIn,
+  Search,
+  Trophy,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/search', label: 'Search', icon: Search },
   { path: '/modules', label: 'Modules', icon: BookOpen },
   { path: '/learning-path', label: 'Learning Path', icon: Route },
   { path: '/sandbox', label: 'Sandbox Lab', icon: FlaskConical },
+  { path: '/notes', label: 'Notes', icon: Bookmark },
+  { path: '/achievements', label: 'Achievements', icon: Trophy },
 ];
 
 const styles = {
@@ -230,7 +237,7 @@ export default function Sidebar() {
         <div style={styles.overlay} onClick={() => setMobileOpen(false)} />
       )}
 
-      <div style={styles.sidebar} className="sidebar-main">
+      <div style={styles.sidebar} className={`sidebar-main${mobileOpen ? ' open' : ''}`}>
         {/* Logo */}
         <div style={styles.logo}>
           <div style={styles.logoIcon}>
@@ -299,6 +306,21 @@ export default function Sidebar() {
               <div style={styles.userName}>{user?.username || 'User'}</div>
               <div style={styles.userEmail}>{isGuestMode ? 'Guest Mode' : (user?.email || '')}</div>
             </div>
+            <button
+              style={styles.logoutBtn}
+              onClick={() => { navigate('/settings'); setMobileOpen(false); }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(6, 182, 212, 0.1)';
+                e.currentTarget.style.color = '#06b6d4';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = '#64748b';
+              }}
+              title="Settings"
+            >
+              <SettingsIcon size={16} />
+            </button>
             {isGuestMode ? (
               <button
                 style={styles.logoutBtn}

@@ -61,6 +61,61 @@ async def dashboard_stats(user=Depends(require_user)):
     )
 
 
+@router.get("/api/dashboard")
+async def dashboard(user=Depends(require_user)):
+    """Dashboard endpoint formatted for frontend compatibility.
+
+    Returns the shape the frontend expects:
+    { user, stats, recent_activity, skills, overall_progress }
+    """
+    all_prog = get_all_progress(user["id"])
+    modules = get_all_modules()
+    total = len(modules)
+    completed = 0
+    total_score = 0
+    skill_scores: dict[str, list[int]] = {}
+
+    for mod_summary in modules:
+        mod = get_module(mod_summary.id)
+        prog = all_prog.get(mod_summary.id, {})
+        lessons_done = len(prog.get("lessons_completed", []))
+        total_lessons = len(mod.lessons) if mod else 0
+        if total_lessons > 0 and lessons_done >= total_lessons:
+            completed += 1
+        total_score += prog.get("score", 0)
+        for skill in mod_summary.skills:
+            if skill not in skill_scores:
+                skill_scores[skill] = []
+            pct = (lessons_done / total_lessons * 100) if total_lessons > 0 else 0
+            skill_scores[skill].append(int(pct))
+
+    skills = {k: int(sum(v) / len(v)) if v else 0 for k, v in skill_scores.items()}
+
+    overall_progress = round(completed / total * 100, 1) if total > 0 else 0
+
+    return {
+        "user": {
+            "id": user["id"],
+            "username": user.get("username", ""),
+            "email": user.get("email", ""),
+        },
+        "stats": {
+            "total_modules": total,
+            "completed_modules": completed,
+            "current_level": "beginner" if completed < 1 else (
+                "intermediate" if completed < 3 else (
+                    "advanced" if completed < 5 else "professional"
+                )
+            ),
+            "total_score": total_score,
+            "streak_days": 1,
+        },
+        "recent_activity": [],
+        "skills": skills,
+        "overall_progress": overall_progress,
+    }
+
+
 @router.get("/api/progress/{module_id}", response_model=UserProgress)
 async def module_progress(module_id: str, user=Depends(require_user)):
     prog = get_progress(user["id"], module_id)
