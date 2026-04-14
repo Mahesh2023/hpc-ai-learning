@@ -7,6 +7,7 @@ import ModuleList from './pages/ModuleList';
 import ModuleDetail from './pages/ModuleDetail';
 import LessonViewer from './pages/LessonViewer';
 import LearningPath from './pages/LearningPath';
+import Sandbox from './pages/Sandbox';
 import Login from './pages/Login';
 import Register from './pages/Register';
 
@@ -62,6 +63,7 @@ export default function App() {
           <Route path="/modules/:id" element={<ModuleDetail />} />
           <Route path="/modules/:id/lessons/:lessonId" element={<LessonViewer />} />
           <Route path="/learning-path" element={<LearningPath />} />
+          <Route path="/sandbox" element={<Sandbox />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

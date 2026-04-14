@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import yaml
 
-from ..models.schemas import Module, Lesson, Exercise, ModuleSummary, LessonSummary
+from ..config import CURRICULUM_DIR
+from ..models.schemas import Module, Lesson, Exercise, ModuleSummary
 
 _modules: dict[str, Module] = {}
 _exercises: dict[str, Exercise] = {}
-
-CURRICULUM_DIR = Path(__file__).parent.parent / "curriculum"
 
 
 def load_curriculum() -> None:
@@ -28,12 +26,11 @@ def load_curriculum() -> None:
     for yaml_file in sorted(CURRICULUM_DIR.glob("*.yaml")):
         with open(yaml_file, "r") as f:
             data = yaml.safe_load(f)
-        if not data:
+        if not data or not isinstance(data, dict):
             continue
 
-        module_data = data if isinstance(data, dict) else {}
         lessons = []
-        for ldata in module_data.get("lessons", []):
+        for ldata in data.get("lessons", []):
             exercises = []
             for edata in ldata.get("exercises", []):
                 ex = Exercise(**edata)
@@ -50,31 +47,25 @@ def load_curriculum() -> None:
             lessons.append(lesson)
 
         module = Module(
-            id=module_data["id"],
-            title=module_data["title"],
-            description=module_data.get("description", ""),
-            level=module_data.get("level", "beginner"),
-            order=module_data.get("order", 0),
-            estimated_hours=module_data.get("estimated_hours", 0),
-            prerequisites=module_data.get("prerequisites", []),
-            skills=module_data.get("skills", []),
+            id=data["id"],
+            title=data["title"],
+            description=data.get("description", ""),
+            level=data.get("level", "beginner"),
+            order=data.get("order", 0),
+            estimated_hours=data.get("estimated_hours", 0),
+            prerequisites=data.get("prerequisites", []),
+            skills=data.get("skills", []),
             lessons=lessons,
         )
         _modules[module.id] = module
 
 
 def get_all_modules() -> list[ModuleSummary]:
-    """Return summary info for all modules."""
     return [
         ModuleSummary(
-            id=m.id,
-            title=m.title,
-            description=m.description,
-            level=m.level,
-            order=m.order,
-            estimated_hours=m.estimated_hours,
-            prerequisites=m.prerequisites,
-            skills=m.skills,
+            id=m.id, title=m.title, description=m.description,
+            level=m.level, order=m.order, estimated_hours=m.estimated_hours,
+            prerequisites=m.prerequisites, skills=m.skills,
             lesson_count=len(m.lessons),
         )
         for m in sorted(_modules.values(), key=lambda x: x.order)

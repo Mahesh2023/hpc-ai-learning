@@ -8,20 +8,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
+from ..config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from ..models.schemas import UserCreate, UserLogin, UserOut, Token
 from ..models.database import create_user, get_user_by_email, get_user_by_id, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-SECRET_KEY = "hpc-ai-learning-secret-key-change-in-production"
-ALGORITHM = "HS256"
-TOKEN_EXPIRE_HOURS = 24
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
 def _create_token(user_id: str) -> str:
-    expire = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS)
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode({"sub": user_id, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
 
 

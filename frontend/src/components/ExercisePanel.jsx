@@ -10,8 +10,10 @@ import {
   ChevronDown,
   ChevronUp,
   Terminal,
+  Play,
 } from 'lucide-react';
-import { submitExerciseAPI } from '../utils/api';
+import { submitExerciseAPI, runCodeAPI } from '../utils/api';
+import CodeEditor from './CodeEditor';
 
 const styles = {
   panel: { display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' },
@@ -58,6 +60,8 @@ function ExerciseItem({ exercise }) {
   const [result, setResult] = useState(null);
   const [hintsShown, setHintsShown] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [codeOutput, setCodeOutput] = useState(null);
+  const [codeRunning, setCodeRunning] = useState(false);
 
   const typeConfig = getTypeConfig(exercise.type);
   const TypeIcon = typeConfig.icon;
@@ -137,10 +141,33 @@ function ExerciseItem({ exercise }) {
           {exercise.type === 'coding' && (
             <>
               <p style={styles.question}>{exercise.description}</p>
-              <textarea style={styles.codeArea} value={codeAnswer} onChange={(e) => setCodeAnswer(e.target.value)} placeholder="Write your code here..." disabled={submitted} spellCheck={false}
-                onFocus={(e) => { e.target.style.borderColor = '#06b6d4'; }}
-                onBlur={(e) => { e.target.style.borderColor = '#334155'; }}
-              />
+              <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #334155' }}>
+                <CodeEditor value={codeAnswer} onChange={setCodeAnswer} language="python" readOnly={submitted} height="180px" />
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <button
+                  onClick={async () => {
+                    setCodeRunning(true);
+                    try {
+                      const res = await runCodeAPI('python', codeAnswer);
+                      setCodeOutput(res);
+                    } catch (e) {
+                      setCodeOutput({ stdout: '', stderr: e.message, exit_code: 1 });
+                    } finally {
+                      setCodeRunning(false);
+                    }
+                  }}
+                  disabled={codeRunning || !codeAnswer.trim()}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', padding: '0.375rem 0.75rem', fontSize: '0.8125rem', fontWeight: '600', background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', cursor: codeRunning ? 'not-allowed' : 'pointer', transition: 'all 150ms' }}
+                >
+                  {codeRunning ? <><div className="loading-spinner sm" />Running...</> : <><Play size={14} />Run</>}
+                </button>
+              </div>
+              {codeOutput && (
+                <pre style={{ marginTop: '0.5rem', padding: '0.75rem', background: '#0d1117', border: '1px solid #1e293b', borderRadius: '8px', fontFamily: "'JetBrains Mono', monospace", fontSize: '0.8125rem', lineHeight: '1.5', color: '#e2e8f0', whiteSpace: 'pre-wrap', maxHeight: '150px', overflow: 'auto' }}>
+                  {codeOutput.stdout}{codeOutput.stderr && <span style={{ color: '#fca5a5' }}>{codeOutput.stderr}</span>}
+                </pre>
+              )}
             </>
           )}
 

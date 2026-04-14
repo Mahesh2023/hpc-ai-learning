@@ -10,12 +10,14 @@ import {
   X,
   Cpu,
   ChevronRight,
+  FlaskConical,
 } from 'lucide-react';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/modules', label: 'Modules', icon: BookOpen },
   { path: '/learning-path', label: 'Learning Path', icon: Route },
+  { path: '/sandbox', label: 'Sandbox Lab', icon: FlaskConical },
 ];
 
 const styles = {

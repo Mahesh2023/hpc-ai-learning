@@ -27,3 +27,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Database
+*.db
+backend/data/
+
+# Docker
+.docker/

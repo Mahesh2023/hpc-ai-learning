@@ -496,3 +496,38 @@ export async function getLearningPathAPI() {
   if (data) return data;
   return DEMO_LEARNING_PATH;
 }
+
+// ── Sandbox API ──
+
+export async function runCodeAPI(language, code, timeout) {
+  const data = await apiRequest('/sandbox/run', {
+    method: 'POST',
+    body: JSON.stringify({ language, code, timeout }),
+  });
+  if (data) return data;
+  // Fallback when backend is offline
+  return {
+    stdout: '(Demo mode — backend offline. Connect the backend to run code.)\n',
+    stderr: '',
+    exit_code: 0,
+    timed_out: false,
+  };
+}
+
+export async function getTemplatesAPI() {
+  const data = await apiRequest('/sandbox/templates');
+  if (data) return data;
+  return [
+    { id: 'python_hello', language: 'python', title: 'Hello World', description: 'Your first Python program', code: 'print("Hello, HPC World!")\n' },
+    { id: 'bash_sysinfo', language: 'bash', title: 'System Info', description: 'Explore the host system', code: 'echo "=== Kernel ===" && uname -a\necho "\\n=== CPUs ===" && nproc\n' },
+    { id: 'python_numpy', language: 'python', title: 'NumPy Matrix Ops', description: 'Linear algebra basics', code: 'import numpy as np\nA = np.random.rand(3,3)\nprint("Det:", np.linalg.det(A))\n' },
+    { id: 'python_mpi_sim', language: 'python', title: 'MPI Simulation', description: 'Map-reduce across workers', code: 'data = list(range(100))\nworkers = 4\nfor r in range(workers):\n    chunk = data[r*25:(r+1)*25]\n    print(f"Worker {r}: sum={sum(chunk)}")\n' },
+  ];
+}
+
+// ── Health ──
+
+export async function healthCheckAPI() {
+  const data = await apiRequest('/health');
+  return data;
+}
