@@ -1,7 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../utils/auth';
-import { UserPlus, Mail, KeyRound, User, AlertCircle, Cpu, Eye, EyeOff } from 'lucide-react';
+import { checkPasswordStrengthAPI } from '../utils/api';
+import { UserPlus, Mail, KeyRound, User, AlertCircle, Cpu, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+
+const STRENGTH_COLORS = ['#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e'];
+const STRENGTH_LABELS = ['Very weak', 'Weak', 'Fair', 'Strong', 'Very strong'];
+const STRENGTH_WIDTHS = ['20%', '40%', '60%', '80%', '100%'];
 
 export default function Register() {
   const navigate = useNavigate();
@@ -12,12 +17,44 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [strength, setStrength] = useState(null);
+
+  // Password strength check (debounced)
+  useEffect(() => {
+    if (password.length < 4) { setStrength(null); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const result = await checkPasswordStrengthAPI(password);
+        if (result) setStrength(result);
+        else {
+          // Fallback client-side strength check
+          let score = 0;
+          if (password.length >= 8) score++;
+          if (password.length >= 12) score++;
+          if (/[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password)) score++;
+          if (/[^a-zA-Z0-9]/.test(password)) score++;
+          setStrength({ score: Math.min(score, 4), feedback: STRENGTH_LABELS[Math.min(score, 4)], suggestions: [] });
+        }
+      } catch {
+        // Client-side fallback
+        let score = 0;
+        if (password.length >= 8) score++;
+        if (password.length >= 12) score++;
+        if (/[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password)) score++;
+        if (/[^a-zA-Z0-9]/.test(password)) score++;
+        setStrength({ score: Math.min(score, 4), feedback: STRENGTH_LABELS[Math.min(score, 4)], suggestions: [] });
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [password]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!username || !email || !password || !confirmPassword) { setError('Please fill in all fields'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match'); return; }
-    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+    if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
+    if (username.length < 3) { setError('Username must be at least 3 characters'); return; }
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) { setError('Username may only contain letters, numbers, hyphens, underscores'); return; }
     setLoading(true);
     try { await register(username, email, password); navigate('/', { replace: true }); }
     catch (err) { /* error handled */ }
@@ -68,15 +105,32 @@ export default function Register() {
             <input type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle} onFocus={focusStyle} onBlur={blurStyle} autoComplete="email" />
           </div>
 
-          <div style={{ position: 'relative', marginBottom: '1.25rem' }}>
+          <div style={{ position: 'relative', marginBottom: '0.5rem' }}>
             <KeyRound size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#64748b', pointerEvents: 'none' }} />
-            <input type={showPassword ? 'text' : 'password'} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)}
+            <input type={showPassword ? 'text' : 'password'} placeholder="Password (min 8 characters)" value={password} onChange={(e) => setPassword(e.target.value)}
               style={{ ...inputStyle, paddingRight: '2.75rem' }} onFocus={focusStyle} onBlur={blurStyle} autoComplete="new-password" />
             <button type="button" style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '0.25rem', display: 'flex' }}
               onClick={() => setShowPassword(!showPassword)}>
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
+
+          {/* Password Strength Meter */}
+          {strength !== null && (
+            <div style={{ marginBottom: '1.25rem', padding: '0 0.25rem' }}>
+              <div style={{ height: '4px', borderRadius: '2px', background: '#1e293b', overflow: 'hidden', marginBottom: '0.25rem' }}>
+                <div style={{ height: '100%', width: STRENGTH_WIDTHS[strength.score], background: STRENGTH_COLORS[strength.score], transition: 'all 300ms ease', borderRadius: '2px' }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: STRENGTH_COLORS[strength.score] }}>
+                <ShieldCheck size={12} />{strength.feedback}
+              </div>
+              {strength.suggestions && strength.suggestions.length > 0 && (
+                <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.15rem' }}>
+                  {strength.suggestions.join(' ')}
+                </div>
+              )}
+            </div>
+          )}
 
           <div style={{ position: 'relative', marginBottom: '1.25rem' }}>
             <KeyRound size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#64748b', pointerEvents: 'none' }} />

@@ -1,3 +1,5 @@
+import { getAccessToken, setAccessToken } from './auth';
+
 const BASE_URL = '/api';
 
 // Demo / Mock Data
@@ -325,11 +327,16 @@ const DEMO_LEARNING_PATH = {
   overall_progress: 18,
 };
 
-// API Helpers
+// API Helpers — v3.0 (in-memory token, HttpOnly cookie for refresh)
 
 function getToken() {
-  return localStorage.getItem('hpc_auth_token');
+  // Primary: in-memory token (XSS-safe)
+  // Fallback: localStorage (demo/static mode compat)
+  return getAccessToken() || localStorage.getItem('hpc_auth_token');
 }
+
+let isRefreshing = false;
+let refreshPromise = null;
 
 async function apiRequest(endpoint, options = {}) {
   const token = getToken();
@@ -343,6 +350,7 @@ async function apiRequest(endpoint, options = {}) {
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
       headers,
+      credentials: 'include', // Send HttpOnly cookies
     });
 
     // If response is not JSON (e.g. HTML 404 from GitHub Pages), treat as backend unavailable
@@ -350,6 +358,31 @@ async function apiRequest(endpoint, options = {}) {
     if (!contentType.includes('application/json')) {
       console.warn(`Backend unavailable for ${endpoint} (non-JSON response), using demo data`);
       return null;
+    }
+
+    // Auto-refresh on 401 (token expired)
+    if (response.status === 401 && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/login')) {
+      try {
+        const refreshData = await refreshTokenAPI();
+        if (refreshData && refreshData.access_token) {
+          setAccessToken(refreshData.access_token);
+          // Retry the original request with new token
+          const retryHeaders = {
+            ...headers,
+            Authorization: `Bearer ${refreshData.access_token}`,
+          };
+          const retryResponse = await fetch(`${BASE_URL}${endpoint}`, {
+            ...options,
+            headers: retryHeaders,
+            credentials: 'include',
+          });
+          if (retryResponse.ok) {
+            return await retryResponse.json();
+          }
+        }
+      } catch {
+        // Refresh failed
+      }
     }
 
     if (!response.ok) {
@@ -369,21 +402,23 @@ async function apiRequest(endpoint, options = {}) {
 
 // Auth API
 
-export async function loginAPI(email, password) {
+export async function loginAPI(email, password, totpCode = null) {
   try {
+    const body = { email, password };
+    if (totpCode) body.totp_code = totpCode;
     const data = await apiRequest('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(body),
     });
     if (data) return data;
   } catch (e) {
     if (email === 'demo@hpcai.dev') {
-      return { access_token: 'demo-token-12345', token_type: 'bearer' };
+      return { access_token: 'demo-token-12345', token_type: 'bearer', expires_in: 86400 };
     }
     throw e;
   }
   if (email === 'demo@hpcai.dev') {
-    return { access_token: 'demo-token-12345', token_type: 'bearer' };
+    return { access_token: 'demo-token-12345', token_type: 'bearer', expires_in: 86400 };
   }
   throw new Error('Backend unavailable. Use demo@hpcai.dev / any password to explore.');
 }
@@ -398,7 +433,32 @@ export async function registerAPI(username, email, password) {
   } catch (e) {
     throw e;
   }
-  return { id: 1, username, email, message: 'Demo registration successful' };
+  return { access_token: 'demo-token-12345', token_type: 'bearer', expires_in: 86400 };
+}
+
+export async function refreshTokenAPI() {
+  const response = await fetch(`${BASE_URL}/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include', // Sends HttpOnly cookie
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!response.ok) return null;
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) return null;
+  return await response.json();
+}
+
+export async function logoutAPI() {
+  try {
+    await fetch(`${BASE_URL}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(getToken() && { Authorization: `Bearer ${getToken()}` }),
+      },
+    });
+  } catch { /* ignore */ }
 }
 
 export async function getMeAPI() {
@@ -407,6 +467,50 @@ export async function getMeAPI() {
   const token = getToken();
   if (token) return DEMO_USER;
   return null;
+}
+
+export async function changePasswordAPI(currentPassword, newPassword) {
+  return await apiRequest('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
+export async function checkPasswordStrengthAPI(password) {
+  return await apiRequest('/auth/password-strength', {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  });
+}
+
+export async function setup2FAAPI() {
+  return await apiRequest('/auth/2fa/setup', { method: 'POST' });
+}
+
+export async function verify2FASetupAPI(code) {
+  return await apiRequest('/auth/2fa/verify-setup', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  });
+}
+
+export async function disable2FAAPI(password, code) {
+  return await apiRequest('/auth/2fa/disable', {
+    method: 'POST',
+    body: JSON.stringify({ password, code }),
+  });
+}
+
+export async function getSessionsAPI() {
+  return await apiRequest('/auth/sessions');
+}
+
+export async function revokeSessionAPI(sessionId) {
+  return await apiRequest(`/auth/sessions/${sessionId}`, { method: 'DELETE' });
+}
+
+export async function revokeAllSessionsAPI() {
+  return await apiRequest('/auth/sessions/revoke-all', { method: 'POST' });
 }
 
 // Modules API
