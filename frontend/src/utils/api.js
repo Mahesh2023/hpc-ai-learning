@@ -345,6 +345,13 @@ async function apiRequest(endpoint, options = {}) {
       headers,
     });
 
+    // If response is not JSON (e.g. HTML 404 from GitHub Pages), treat as backend unavailable
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      console.warn(`Backend unavailable for ${endpoint} (non-JSON response), using demo data`);
+      return null;
+    }
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Request failed' }));
       throw new Error(error.detail || `HTTP ${response.status}`);

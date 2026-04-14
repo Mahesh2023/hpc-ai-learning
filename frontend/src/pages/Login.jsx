@@ -20,6 +20,14 @@ export default function Login() {
     finally { setLoading(false); }
   };
 
+  const handleDemoLogin = async () => {
+    setLoading(true);
+    setError(null);
+    try { await login('demo@hpcai.dev', 'demo'); navigate('/', { replace: true }); }
+    catch (err) { /* error set in context */ }
+    finally { setLoading(false); }
+  };
+
   const inputStyle = {
     width: '100%', padding: '0.8rem 1rem 0.8rem 2.75rem', fontFamily: "'Inter', sans-serif",
     fontSize: '0.9375rem', color: '#f1f5f9', background: '#0f172a', border: '1px solid #334155',
@@ -80,8 +88,18 @@ export default function Login() {
           </button>
         </form>
 
-        <div style={{ marginTop: '1.25rem', padding: '0.75rem 1rem', borderRadius: '10px', background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', fontSize: '0.75rem', color: '#fbbf24', textAlign: 'center', lineHeight: 1.6 }}>
-          <strong>Demo Mode:</strong> Use <code style={{ background: 'rgba(6,182,212,0.15)', padding: '0.1rem 0.3rem', borderRadius: '4px', color: '#22d3ee' }}>demo@hpcai.dev</code> with any password to explore
+        <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', margin: '0.75rem 0' }}>
+            <div style={{ flex: 1, height: '1px', background: '#334155' }} />
+            <span style={{ padding: '0 0.75rem', fontSize: '0.75rem', color: '#64748b' }}>or</span>
+            <div style={{ flex: 1, height: '1px', background: '#334155' }} />
+          </div>
+          <button type="button" onClick={handleDemoLogin} disabled={loading}
+            style={{ width: '100%', padding: '0.75rem', fontSize: '0.875rem', fontWeight: '600', fontFamily: "'Inter', sans-serif", color: '#fbbf24', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '12px', cursor: loading ? 'not-allowed' : 'pointer', transition: 'all 200ms ease', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: loading ? 0.7 : 1 }}
+            onMouseEnter={(e) => { if (!loading) { e.currentTarget.style.background = 'rgba(245,158,11,0.15)'; e.currentTarget.style.borderColor = 'rgba(245,158,11,0.4)'; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(245,158,11,0.08)'; e.currentTarget.style.borderColor = 'rgba(245,158,11,0.25)'; }}>
+            <Cpu size={16} />Try Demo — No Account Needed
+          </button>
         </div>
       </div>
 

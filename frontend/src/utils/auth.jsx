@@ -47,8 +47,15 @@ export function AuthProvider({ children }) {
     setError(null);
     try {
       await registerAPI(username, email, password);
-      const data = await loginAPI(email, password);
-      localStorage.setItem('hpc_auth_token', data.access_token);
+      // Try logging in with the registered credentials; fall back to demo login
+      try {
+        const data = await loginAPI(email, password);
+        localStorage.setItem('hpc_auth_token', data.access_token);
+      } catch (loginErr) {
+        // Backend unavailable (static mode) — use demo token so user can explore
+        const demoData = await loginAPI('demo@hpcai.dev', 'demo');
+        localStorage.setItem('hpc_auth_token', demoData.access_token);
+      }
       await fetchUser();
       return true;
     } catch (err) {
