@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: hpc-ai-learning
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: HPCAI_SECRET_KEY
+        generateValue: true
+      - key: HPCAI_SANDBOX_ENABLED
+        value: "true"
+      - key: HPCAI_TERMINAL_ENABLED
+        value: "false"
+      - key: HPCAI_CORS_ORIGINS
+        value: "*"
+      - key: HPCAI_DATABASE_URL
+        value: "sqlite:////app/data/hpcai.db"
+    healthCheckPath: /api/health

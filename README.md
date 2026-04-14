@@ -15,7 +15,37 @@ A full-stack, production-ready interactive learning platform for **AI Platform E
 | **Dark Theme UI** | Professional dark theme with responsive design |
 | **Docker Deployment** | Single `docker compose up` to deploy everything |
 
-## Quick Start
+## Deploy Free (One-Click)
+
+### Render.com (recommended — free forever)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Mahesh2023/hpc-ai-learning)
+
+Or manually:
+1. Sign up at [render.com](https://render.com) (free, no credit card)
+2. **New > Web Service** → connect your GitHub repo
+3. Select **Docker** runtime, plan **Free**
+4. It auto-detects the root `Dockerfile` — click **Deploy**
+5. Wait ~3 min for build → your app is live at `https://hpc-ai-learning.onrender.com`
+
+> **Free tier notes:** Service sleeps after 15 min idle (cold start ~60 s). SQLite data resets on sleep. Perfect for demos and learning.
+
+### Railway.app (free $5 trial)
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template?referralCode=&template=https://github.com/Mahesh2023/hpc-ai-learning)
+
+Or manually:
+1. Sign up at [railway.com](https://railway.com) (no credit card for trial)
+2. **New Project > Deploy from GitHub Repo** → select `Mahesh2023/hpc-ai-learning`
+3. Railway detects the Dockerfile and deploys automatically
+4. Add env var `PORT` = `${{RAILWAY_PORT}}` if not auto-set
+5. Get a public URL via **Settings > Networking > Generate Domain**
+
+> Railway provides $5 free credit (30-day trial), then $5/mo hobby plan. Persistent volumes available.
+
+---
+
+## Quick Start (Local)
 
 ### Option 1: Docker (recommended)
 
@@ -127,9 +157,16 @@ make secret    # Generate a JWT secret key
 
 ```
 hpc-ai-learning/
-├── docker-compose.yml          # One-command deployment
+├── Dockerfile                 # Unified container for cloud deploy
+├── docker-compose.yml          # One-command local deployment
+├── render.yaml                # Render.com one-click blueprint
+├── railway.toml               # Railway deployment config
 ├── Makefile                    # Dev & deployment shortcuts
 ├── .env.example                # Environment configuration template
+│
+├── deploy/
+│   ├── nginx.conf             # Nginx config for unified container
+│   └── start.sh              # Startup script (nginx + backend)
 │
 ├── backend/
 │   ├── Dockerfile
@@ -202,7 +239,7 @@ All settings are controlled via environment variables (prefix `HPCAI_`):
 | Frontend | React 18, Vite, Monaco Editor, xterm.js, Recharts |
 | Backend | FastAPI, SQLAlchemy, Gunicorn, WebSockets |
 | Database | SQLite (file-based, zero config) |
-| Deployment | Docker, Docker Compose, Nginx |
+| Deployment | Docker, Docker Compose, Nginx, Render, Railway |
 | Security | JWT auth, bcrypt passwords, sandboxed execution |
 
 ## License
