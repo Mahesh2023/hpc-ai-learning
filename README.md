@@ -1,5 +1,7 @@
 # HPC AI Learning Platform
 
+**[Live Demo](https://mahesh2023.github.io/hpc-ai-learning/)** | [GitHub Repo](https://github.com/Mahesh2023/hpc-ai-learning)
+
 A full-stack, production-ready interactive learning platform for **AI Platform Engineering with HPC**, taking you from Linux fundamentals to enterprise-scale AI infrastructure.
 
 ## Features
