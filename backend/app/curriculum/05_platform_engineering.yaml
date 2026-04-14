@@ -131,7 +131,7 @@ lessons:
       terraform import aws_instance.gpu_worker[0] i-1234567890abcdef0
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"terraform-basics"}'}
 
       ## Modules for Reusability
 
@@ -187,7 +187,7 @@ lessons:
                                    ▼ (blocks concurrent writes)
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"terraform-basics"}'}
 
       ## Multi-Cloud Considerations
 
@@ -351,7 +351,7 @@ lessons:
       └─────────────┘    └────────────┘    └──────────────┘
       ```
 
-      :::interactive{component="PipelineBuilder" config='{"preset":"mlops-full"}'}
+      :::interactive{component="PipelineBuilder" config='{"preset":"mlops"}'}
 
       ## Kubeflow Pipelines
 
@@ -504,7 +504,7 @@ lessons:
           validate >> train >> deploy
       ```
 
-      :::interactive{component="PipelineBuilder" config='{"preset":"ci-cd"}'}
+      :::interactive{component="PipelineBuilder" config='{"preset":"cicd"}'}
 
       ## GitHub Actions CI/CD for ML
 
@@ -752,7 +752,7 @@ lessons:
               --strict-model-config=false
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"model-serving"}'}
 
       ### Python Client for Triton
 
@@ -839,7 +839,7 @@ lessons:
           canaryTrafficPercent: 10
       ```
 
-      :::interactive{component="K8sVisualizer"}
+      :::interactive{component="K8sVisualizer" config='{"preset":"ml-training"}'}
 
       ## A/B Testing and Canary Deployments
 
@@ -1086,7 +1086,7 @@ lessons:
           name: metrics
       ```
 
-      :::interactive{component="K8sVisualizer"}
+      :::interactive{component="K8sVisualizer" config='{"preset":"daemonset"}'}
 
       ## Key GPU Metrics
 
@@ -1151,7 +1151,7 @@ lessons:
               summary: "GPU {{ $labels.gpu }} XID errors detected — potential hardware failure"
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"monitoring-stack"}'}
 
       ## SLOs and SLIs for ML Services
 
@@ -1186,7 +1186,7 @@ lessons:
       1 - ((1 - (sum(rate(http_requests_total{code!~"5.."}[30d])) / sum(rate(http_requests_total[30d])))) / 0.001)
       ```
 
-      :::interactive{component="GuidedLab"}
+      :::interactive{component="GuidedLab" config='{"preset":"slurm-basics"}'}
 
     exercises:
       - id: "platform-eng-monitoring-q1"
@@ -1503,7 +1503,7 @@ lessons:
       serve.run(app, host="0.0.0.0", port=8000)
       ```
 
-      :::interactive{component="K8sVisualizer"}
+      :::interactive{component="K8sVisualizer" config='{"preset":"batch-job"}'}
 
       ## Dask for Scalable Data Processing
 
@@ -1549,7 +1549,7 @@ lessons:
       | Scheduling | Distributed, heterogeneous | Centralized |
       | Best for | ML pipelines end-to-end | ETL and feature engineering |
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"ray-cluster"}'}
 
     exercises:
       - id: "platform-eng-ray-q1"

@@ -163,7 +163,7 @@ lessons:
       CMD ["train.py", "--epochs=10"]
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"docker"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"docker-basics"}'}
 
       ## 3. Multi-Stage Builds
 
@@ -918,7 +918,7 @@ lessons:
       apptainer instance stop myservice
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"singularity-basics"}'}
 
       ### 4.2 Environment Variables
 
@@ -1461,7 +1461,7 @@ lessons:
         └────────────────────────────────────────────────────┘
       ```
 
-      :::interactive{component="K8sVisualizer"}
+      :::interactive{component="K8sVisualizer" config='{"preset":"web-app"}'}
 
       ### 1.1 Control Plane Components
 
@@ -1620,7 +1620,7 @@ lessons:
       kubectl scale deployment/inference-api --replicas=5
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"kubectl-basics"}'}
 
       ## 4. Services
 
@@ -2597,7 +2597,7 @@ lessons:
                 mig-enabled: false
       ```
 
-      :::interactive{component="CUDAVisualizer"}
+      :::interactive{component="CUDAVisualizer" config='{"preset":"occupancy"}'}
 
       ## 4. GPU Monitoring with DCGM
 
@@ -3334,7 +3334,7 @@ lessons:
       helm history my-mlflow
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"helm-basics"}'}
 
       ## 3. Chart Structure
 
@@ -3776,7 +3776,7 @@ lessons:
       helmfile destroy
       ```
 
-      :::interactive{component="PipelineBuilder" config='{"preset":"ci-cd"}'}
+      :::interactive{component="PipelineBuilder" config='{"preset":"cicd"}'}
 
       ## 8. Best Practices
 

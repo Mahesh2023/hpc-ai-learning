@@ -220,7 +220,7 @@ lessons:
 
       Try piping commands together in this interactive terminal:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"linux-basics"}'}
 
       ---
 
@@ -269,7 +269,7 @@ lessons:
 
       Practice setting file permissions and ownership in this terminal:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"file-permissions"}'}
 
       ---
 
@@ -335,7 +335,7 @@ lessons:
 
       Explore environment variables and the module system hands-on:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"text-processing"}'}
 
       ---
 
@@ -721,7 +721,7 @@ lessons:
 
       Try running system commands from a Python-ready terminal:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="GuidedLab" config='{"preset":"python-hpc"}'}
 
       ---
 
@@ -864,7 +864,7 @@ lessons:
 
       Practice NumPy array operations in this interactive environment:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="GuidedLab" config='{"preset":"python-hpc"}'}
 
       ---
 
@@ -1396,7 +1396,7 @@ lessons:
 
       Practice SSH commands, key generation, and port forwarding:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"networking-tools"}'}
 
       ---
 
@@ -1479,7 +1479,7 @@ lessons:
 
       Try running network diagnostic commands in this terminal:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"networking-tools"}'}
 
       ---
 
@@ -1867,7 +1867,7 @@ lessons:
 
       Try the basic Git workflow — init, add, commit, and view history:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"git"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"git-workflow"}'}
 
       ---
 
@@ -1936,7 +1936,7 @@ lessons:
 
       Visualize how branches, merges, and rebases change the commit graph:
 
-      :::interactive{component="GitVisualizer" config='{"preset":"branching"}'}
+      :::interactive{component="GitVisualizer" config='{"preset":"feature-branch"}'}
 
       ---
 
@@ -2045,7 +2045,7 @@ lessons:
 
       Practice configuring .gitignore and Git LFS for HPC projects:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"git"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"git-workflow"}'}
 
       ---
 
@@ -2086,7 +2086,7 @@ lessons:
       Practice the Git workflow in this guided environment — create repos,
       branch, commit, merge, and resolve conflicts hands-on:
 
-      :::interactive{component="GitVisualizer" config='{"preset":"basics"}'}
+      :::interactive{component="GitVisualizer" config='{"preset":"rebase-vs-merge"}'}
 
       ---
 
@@ -2632,7 +2632,7 @@ lessons:
 
       Practice writing loops and conditionals in this interactive terminal:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"text-processing"}'}
 
       ---
 
@@ -2710,7 +2710,7 @@ lessons:
 
       Try writing scripts with error handling and trap in this terminal:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"process-management"}'}
 
       ---
 
@@ -2774,7 +2774,7 @@ lessons:
 
       Experiment with SLURM commands and job submission scripts:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"text-processing"}'}
 
       ---
 
@@ -2819,7 +2819,7 @@ lessons:
 
       Try writing your own log parsing script in this interactive terminal:
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"process-management"}'}
 
       ---
 

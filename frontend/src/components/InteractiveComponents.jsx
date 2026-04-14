@@ -62,10 +62,18 @@ export function InteractiveComponent({ name, config = {}, compact = false }) {
       </div>
     );
   }
+
+  // Resolve GuidedLab presets: look up preset name in GUIDED_LAB_PRESETS
+  let resolvedConfig = config;
+  if (name === 'GuidedLab' && config.preset && GUIDED_LAB_PRESETS[config.preset]) {
+    const { preset: _discard, ...rest } = config;
+    resolvedConfig = { ...GUIDED_LAB_PRESETS[config.preset], ...rest };
+  }
+
   return (
     <Suspense fallback={<LoadingFallback />}>
       <div style={{ margin: '1.5rem 0' }}>
-        <Component compact={compact} {...config} />
+        <Component compact={compact} {...resolvedConfig} />
       </div>
     </Suspense>
   );

@@ -51,7 +51,7 @@ lessons:
         └───────────┘  └───────────┘  └────────────────────────┘
       ```
 
-      :::interactive{component="K8sVisualizer"}
+      :::interactive{component="K8sVisualizer" config='{"preset":"web-app"}'}
 
       ## Kubernetes Federation Approaches
 
@@ -167,7 +167,7 @@ lessons:
           return False
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"kubectl-basics"}'}
 
       ## Multi-Cloud Strategy
 
@@ -298,7 +298,7 @@ lessons:
                   self._save_checkpoint()
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"gpu-profiling"}'}
 
       **Spot Instance Kubernetes Configuration:**
 
@@ -409,7 +409,7 @@ lessons:
           return {"team": team, "period_days": days, "total_cost": round(total_cost, 2), "breakdown": breakdown}
       ```
 
-      :::interactive{component="GuidedLab"}
+      :::interactive{component="GuidedLab" config='{"preset":"python-hpc"}'}
 
       ## Total Cost of Ownership (TCO) Analysis
 
@@ -587,7 +587,7 @@ lessons:
         apiGroup: rbac.authorization.k8s.io
       ```
 
-      :::interactive{component="K8sVisualizer"}
+      :::interactive{component="K8sVisualizer" config='{"preset":"web-app"}'}
 
       ## Network Policies
 
@@ -673,7 +673,7 @@ lessons:
               property: secret_access_key
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"security-hardening"}'}
 
       ## Container Image Security
 
@@ -751,7 +751,7 @@ lessons:
               resourceNames: ["kube-root-ca.crt"]
       ```
 
-      :::interactive{component="GuidedLab"}
+      :::interactive{component="GuidedLab" config='{"preset":"slurm-basics"}'}
 
     exercises:
       - id: "prof-mastery-security-q1"
@@ -854,7 +854,7 @@ lessons:
       export NCCL_P2P_LEVEL=NVL                 # P2P via NVLink when available
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"gpu-profiling"}'}
 
       The `NCCL_ALGO` variable is particularly important. For small messages, the **Tree**
       algorithm achieves lower latency (O(log N) steps). For large tensors (gradient
@@ -952,7 +952,7 @@ lessons:
                         value: "/var/run/nvidia/nccl-topo.xml"
       ```
 
-      :::interactive{component="K8sVisualizer"}
+      :::interactive{component="K8sVisualizer" config='{"preset":"ml-training"}'}
 
       ## Mixed Precision & Flash Attention
 
@@ -1193,7 +1193,7 @@ lessons:
       └─────────────────────────────────────────────────────────────────────┘
       ```
 
-      :::interactive{component="PipelineBuilder" config='{"preset":"mlops-full"}'}
+      :::interactive{component="PipelineBuilder" config='{"preset":"mlops"}'}
 
       ## Capacity Planning
 
@@ -1259,7 +1259,7 @@ lessons:
       # recommended ≈ 272 GPUs (34 nodes × 8 GPUs)
       ```
 
-      :::interactive{component="K8sVisualizer"}
+      :::interactive{component="K8sVisualizer" config='{"preset":"batch-job"}'}
 
       ## Disaster Recovery for ML Platforms
 
@@ -1285,7 +1285,7 @@ lessons:
       4     │  Dev Environments    │  7 days   │  24 hours  │  GitOps rebuild
       ```
 
-      :::interactive{component="GuidedLab"}
+      :::interactive{component="GuidedLab" config='{"preset":"python-hpc"}'}
 
       ## Case Studies
 

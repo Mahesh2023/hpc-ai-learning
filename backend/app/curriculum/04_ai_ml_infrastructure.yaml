@@ -113,7 +113,7 @@ lessons:
       PyTorch and TensorFlow call cuBLAS, cuDNN, and cuFFT under the hood.
       However, understanding the model is essential for performance tuning.
 
-      :::interactive{component="CUDAVisualizer"}
+      :::interactive{component="CUDAVisualizer" config='{"preset":"grid"}'}
 
       ## 3. Warps and Thread Execution
 
@@ -401,7 +401,7 @@ lessons:
       PCIe Throughput           Expected BW      Near zero = stall
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"gpu-profiling"}'}
 
       ## 10. Nsight Systems Profiling
 
@@ -952,7 +952,7 @@ lessons:
       Each layer invalidation causes ALL subsequent layers to rebuild.
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"docker"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"docker-basics"}'}
 
       ## 3. CUDA Pinning and Device Management
 
@@ -1175,7 +1175,7 @@ lessons:
         (no opt)        (graph opt)     (kernel fusion)   (production)
       ```
 
-      :::interactive{component="PipelineBuilder" config='{"preset":"ci-cd"}'}
+      :::interactive{component="PipelineBuilder" config='{"preset":"cicd"}'}
 
       ## 8. Environment Management Best Practices
 
@@ -1635,7 +1635,7 @@ lessons:
       | Stage 2    | + Gradients                 | 8×             |
       | Stage 3    | + Parameters                | Linear w/ GPUs |
 
-      :::interactive{component="CUDAVisualizer" config='{"preset":"memory-hierarchy"}'}
+      :::interactive{component="CUDAVisualizer" config='{"preset":"memory"}'}
 
       DeepSpeed configuration (`ds_config.json`):
 
@@ -2421,7 +2421,7 @@ lessons:
       4. **Stage data to node-local SSD** when possible (`/tmp`, `/local`)
       5. **Use collective I/O** (MPI-IO) for parallel reads
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"lustre-storage"}'}
 
       ## 6. Checkpoint Patterns for Long Training Runs
 
@@ -3062,7 +3062,7 @@ lessons:
       └───────────────────────────────────────────────────┘
       ```
 
-      :::interactive{component="GitVisualizer" config='{"preset":"basics"}'}
+      :::interactive{component="GitVisualizer" config='{"preset":"feature-branch"}'}
 
       ## 6. A/B Testing and Canary Deployments
 
@@ -3191,7 +3191,7 @@ lessons:
        artifacts)      bias checks)       Production)
       ```
 
-      :::interactive{component="PipelineBuilder" config='{"preset":"mlops-full"}'}
+      :::interactive{component="PipelineBuilder" config='{"preset":"mlops"}'}
 
       ```python
       # Example: automated model validation gate

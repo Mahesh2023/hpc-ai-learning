@@ -152,7 +152,7 @@ lessons:
       | `sacct` | Job accounting | `sacct -j 12345 --format=JobID,Elapsed,MaxRSS` |
       | `scontrol` | Job/node control | `scontrol show job 12345` |
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"slurm"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"slurm-commands"}'}
 
       ## Writing a SLURM Job Script
 
@@ -293,7 +293,7 @@ lessons:
 
       Run with: `mpirun -np 4 python script.py`
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"mpi-commands"}'}
 
       ## Collective Operations
 
@@ -386,7 +386,7 @@ lessons:
       lfs df -h
       ```
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"lustre-storage"}'}
 
       ## I/O Best Practices for AI Training
 
@@ -405,7 +405,7 @@ lessons:
       python train.py --data-dir $TMPDIR/data/
       ```
 
-      :::interactive{component="PipelineBuilder" config='{"preset":"ml-training-pipeline"}'}
+      :::interactive{component="PipelineBuilder" config='{"preset":"ml-training"}'}
 
     exercises:
       - id: "hpc-storage-q1"
@@ -469,7 +469,7 @@ lessons:
       # View the profile
       nsys-ui training_profile.nsys-rep
 
-      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+      :::interactive{component="TerminalSimulator" config='{"preset":"gpu-profiling"}'}
 
       # Detailed kernel analysis
       ncu --set full \
