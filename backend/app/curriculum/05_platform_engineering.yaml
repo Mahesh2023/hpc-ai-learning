@@ -131,6 +131,8 @@ lessons:
       terraform import aws_instance.gpu_worker[0] i-1234567890abcdef0
       ```
 
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       ## Modules for Reusability
 
       Terraform modules let you package infrastructure patterns for reuse across teams
@@ -166,6 +168,8 @@ lessons:
       }
       ```
 
+      :::interactive{component="NetworkTopologyViewer"}
+
       ## State Management Best Practices
 
       Terraform state is the single source of truth mapping your configuration to real
@@ -182,6 +186,8 @@ lessons:
                                    │
                                    ▼ (blocks concurrent writes)
       ```
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
 
       ## Multi-Cloud Considerations
 
@@ -345,6 +351,8 @@ lessons:
       └─────────────┘    └────────────┘    └──────────────┘
       ```
 
+      :::interactive{component="PipelineBuilder" config='{"preset":"mlops-full"}'}
+
       ## Kubeflow Pipelines
 
       Kubeflow Pipelines (KFP) is the de facto standard for Kubernetes-native ML workflows.
@@ -496,6 +504,8 @@ lessons:
           validate >> train >> deploy
       ```
 
+      :::interactive{component="PipelineBuilder" config='{"preset":"ci-cd"}'}
+
       ## GitHub Actions CI/CD for ML
 
       CI/CD pipelines validate code changes and trigger retraining automatically.
@@ -520,6 +530,8 @@ lessons:
             if: success()
             run: python deploy.py --model latest --canary-pct 10
       ```
+
+      :::interactive{component="GitVisualizer" config='{"preset":"gitflow"}'}
 
       ## Model Versioning and Promotion
 
@@ -740,6 +752,8 @@ lessons:
               --strict-model-config=false
       ```
 
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       ### Python Client for Triton
 
       ```python
@@ -825,6 +839,8 @@ lessons:
           canaryTrafficPercent: 10
       ```
 
+      :::interactive{component="K8sVisualizer"}
+
       ## A/B Testing and Canary Deployments
 
       Safe model rollouts use traffic splitting to gradually shift load from the old
@@ -839,6 +855,8 @@ lessons:
       └──────────┘                      │  (canary)    │
                                         └──────────────┘
       ```
+
+      :::interactive{component="NetworkTopologyViewer"}
 
     exercises:
       - id: "platform-eng-serving-q1"
@@ -995,6 +1013,8 @@ lessons:
       └─────────────┘ └─────────────┘ └─────────────────┘
       ```
 
+      :::interactive{component="NetworkTopologyViewer"}
+
       ## DCGM Exporter Setup
 
       NVIDIA's Data Center GPU Manager (DCGM) Exporter runs as a DaemonSet on every
@@ -1066,6 +1086,8 @@ lessons:
           name: metrics
       ```
 
+      :::interactive{component="K8sVisualizer"}
+
       ## Key GPU Metrics
 
       | Metric Name | Description | Healthy Range |
@@ -1129,6 +1151,8 @@ lessons:
               summary: "GPU {{ $labels.gpu }} XID errors detected — potential hardware failure"
       ```
 
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       ## SLOs and SLIs for ML Services
 
       Define Service Level Objectives (SLOs) based on measurable Service Level
@@ -1161,6 +1185,8 @@ lessons:
       # Error budget remaining (30-day window, 99.9% SLO)
       1 - ((1 - (sum(rate(http_requests_total{code!~"5.."}[30d])) / sum(rate(http_requests_total[30d])))) / 0.001)
       ```
+
+      :::interactive{component="GuidedLab"}
 
     exercises:
       - id: "platform-eng-monitoring-q1"
@@ -1319,6 +1345,8 @@ lessons:
       └─────────────────────────────────────────────────────┘
       ```
 
+      :::interactive{component="NetworkTopologyViewer"}
+
       ## Ray Remote Functions and Actors
 
       ```python
@@ -1475,6 +1503,8 @@ lessons:
       serve.run(app, host="0.0.0.0", port=8000)
       ```
 
+      :::interactive{component="K8sVisualizer"}
+
       ## Dask for Scalable Data Processing
 
       Dask extends NumPy arrays and Pandas DataFrames to distributed computing with
@@ -1518,6 +1548,8 @@ lessons:
       | DataFrame API | Ray Data | dask.dataframe |
       | Scheduling | Distributed, heterogeneous | Centralized |
       | Best for | ML pipelines end-to-end | ETL and feature engineering |
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
 
     exercises:
       - id: "platform-eng-ray-q1"

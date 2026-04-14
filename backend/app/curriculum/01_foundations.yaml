@@ -218,6 +218,10 @@ lessons:
       command < input.txt           # Feed a file into stdin
       ```
 
+      Try piping commands together in this interactive terminal:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       ---
 
       ## 7. File Permissions and Ownership
@@ -262,6 +266,10 @@ lessons:
       # Make new files in /project/ai-team inherit the group
       chmod g+s /project/ai-team/
       ```
+
+      Practice setting file permissions and ownership in this terminal:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
 
       ---
 
@@ -324,6 +332,10 @@ lessons:
 
       After `module load cuda/12.2`, the module system adds the CUDA bin and
       lib directories to your `$PATH` and `$LD_LIBRARY_PATH` automatically.
+
+      Explore environment variables and the module system hands-on:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
 
       ---
 
@@ -707,6 +719,10 @@ lessons:
       subprocess.run(["cat", user_input])  # The filename is a single argument
       ```
 
+      Try running system commands from a Python-ready terminal:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       ---
 
       ## 3. Filesystem Operations with pathlib
@@ -808,6 +824,10 @@ lessons:
           results = list(executor.map(download, urls))
       ```
 
+      Experiment with Python file operations and multiprocessing:
+
+      :::interactive{component="GuidedLab" config='{"preset":"python-hpc"}'}
+
       ---
 
       ## 5. NumPy Basics for Numerical Computing
@@ -841,6 +861,10 @@ lessons:
       mmap = np.load("/scratch/huge_matrix.npy", mmap_mode="r")
       subset = mmap[0:100]  # Only these rows are read from disk
       ```
+
+      Practice NumPy array operations in this interactive environment:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
 
       ---
 
@@ -1292,6 +1316,10 @@ lessons:
       # Client: ib_write_bw -d mlx5_0 --report_gbits SERVER_IP
       ```
 
+      Explore how HPC network topologies connect compute nodes, switches, and storage:
+
+      :::interactive{component="NetworkTopologyViewer"}
+
       ---
 
       ## 3. SSH for HPC: Your Remote Access Lifeline
@@ -1365,6 +1393,10 @@ lessons:
       # Reverse forwarding — expose your local dev server to the cluster
       ssh -R 5000:localhost:5000 hpc
       ```
+
+      Practice SSH commands, key generation, and port forwarding:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
 
       ---
 
@@ -1444,6 +1476,10 @@ lessons:
       nc -zv gpu-node-001 22              # Test SSH port
       nc -zv gpu-node-001 8888            # Test Jupyter port
       ```
+
+      Try running network diagnostic commands in this terminal:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
 
       ---
 
@@ -1829,6 +1865,10 @@ lessons:
       "Switch optimizer from Adam to AdamW per paper v2 results"
       ```
 
+      Try the basic Git workflow — init, add, commit, and view history:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"git"}'}
+
       ---
 
       ## 3. Branching and Merging
@@ -1893,6 +1933,10 @@ lessons:
       # Interactive rebase — squash messy commits
       git rebase -i HEAD~3    # Rewrite last 3 commits
       ```
+
+      Visualize how branches, merges, and rebases change the commit graph:
+
+      :::interactive{component="GitVisualizer" config='{"preset":"branching"}'}
 
       ---
 
@@ -1999,6 +2043,10 @@ lessons:
       git submodule update --remote --merge
       ```
 
+      Practice configuring .gitignore and Git LFS for HPC projects:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"git"}'}
+
       ---
 
       ## 6. Collaboration: Pull Requests and Code Review
@@ -2038,7 +2086,7 @@ lessons:
       Practice the Git workflow in this guided environment — create repos,
       branch, commit, merge, and resolve conflicts hands-on:
 
-      :::interactive{component="GuidedLab" config='{"preset":"linux-files"}'}
+      :::interactive{component="GitVisualizer" config='{"preset":"basics"}'}
 
       ---
 
@@ -2582,6 +2630,10 @@ lessons:
       done
       ```
 
+      Practice writing loops and conditionals in this interactive terminal:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       ---
 
       ## 6. Functions
@@ -2656,6 +2708,10 @@ lessons:
       process_data "$TMPDIR/important_data.csv"
       ```
 
+      Try writing scripts with error handling and trap in this terminal:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       ---
 
       ## 8. SLURM Job Scripts (Preview for Module 2)
@@ -2716,6 +2772,10 @@ lessons:
       sacct -j 12345 --format=Elapsed,MaxRSS,MaxVMSize  # Job stats
       ```
 
+      Experiment with SLURM commands and job submission scripts:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       ---
 
       ## 9. Practical Script: Log Parser
@@ -2756,6 +2816,10 @@ lessons:
           parse_training_log "$log"
       done
       ```
+
+      Try writing your own log parsing script in this interactive terminal:
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
 
       ---
 

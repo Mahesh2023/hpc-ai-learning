@@ -19,6 +19,11 @@ const StorageStripingSimulator = lazy(() => import('./StorageStripingSimulator')
 const DockerLayerVisualizer = lazy(() => import('./DockerLayerVisualizer'));
 const NetworkTopologyViewer = lazy(() => import('./NetworkTopologyViewer'));
 const ProcessSchedulerViz = lazy(() => import('./ProcessSchedulerViz'));
+const TerminalSimulator = lazy(() => import('./TerminalSimulator'));
+const CUDAVisualizer = lazy(() => import('./CUDAVisualizer'));
+const K8sVisualizer = lazy(() => import('./K8sVisualizer'));
+const PipelineBuilder = lazy(() => import('./PipelineBuilder'));
+const GitVisualizer = lazy(() => import('./GitVisualizer'));
 
 const COMPONENT_REGISTRY = {
   SlurmSimulator,
@@ -29,6 +34,11 @@ const COMPONENT_REGISTRY = {
   DockerLayerVisualizer,
   NetworkTopologyViewer,
   ProcessSchedulerViz,
+  TerminalSimulator,
+  CUDAVisualizer,
+  K8sVisualizer,
+  PipelineBuilder,
+  GitVisualizer,
 };
 
 function LoadingFallback() {

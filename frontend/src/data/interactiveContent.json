@@ -1,31 +1,36 @@
 {
-  "linux-cli":              { "component": "GuidedLab",                "config": "{\"preset\":\"linux-files\"}" },
-  "shell-scripting":        { "component": "ProcessSchedulerViz",      "config": null },
+  "linux-cli":              { "component": "TerminalSimulator",        "config": "{\"mode\":\"linux\"}" },
+  "shell-scripting":        { "component": "TerminalSimulator",        "config": "{\"mode\":\"linux\"}" },
   "python-infra":           { "component": "GuidedLab",                "config": "{\"preset\":\"python-hpc\"}" },
   "networking":             { "component": "NetworkTopologyViewer",     "config": null },
 
   "cluster-architecture":   { "component": "NetworkTopologyViewer",     "config": null },
   "slurm-fundamentals":     { "component": "SlurmSimulator",           "config": null },
   "mpi-programming":        { "component": "MPIVisualizer",            "config": null },
-  "gpu-cuda-fundamentals":  { "component": "GPUMemoryVisualizer",      "config": null },
+  "gpu-cuda-fundamentals":  { "component": "CUDAVisualizer",           "config": null },
 
   "docker-fundamentals":    { "component": "DockerLayerVisualizer",    "config": null },
   "singularity-apptainer":  { "component": "DockerLayerVisualizer",    "config": null },
-  "kubernetes-core":        { "component": "ProcessSchedulerViz",      "config": null },
-  "kubernetes-gpu":         { "component": "GPUMemoryVisualizer",      "config": null },
+  "kubernetes-core":        { "component": "K8sVisualizer",            "config": null },
+  "kubernetes-gpu":         { "component": "K8sVisualizer",            "config": "{\"preset\":\"ml-training\"}" },
+
+  "gpu-computing-cuda":     { "component": "CUDAVisualizer",           "config": null },
+  "ml-framework-deployment":{ "component": "DockerLayerVisualizer",    "config": null },
+  "distributed-training":   { "component": "MPIVisualizer",            "config": null },
+  "data-pipeline-engineering":{ "component": "PipelineBuilder",        "config": "{\"preset\":\"ml-training\"}" },
+  "model-registry-versioning":{ "component": "GitVisualizer",          "config": "{\"preset\":\"feature-branch\"}" },
 
   "ml-frameworks":          { "component": "GuidedLab",                "config": "{\"preset\":\"python-hpc\"}" },
-  "distributed-training":   { "component": "MPIVisualizer",            "config": null },
-  "model-serving":          { "component": "DockerLayerVisualizer",    "config": null },
-  "mlops-pipelines":        { "component": "GuidedLab",                "config": "{\"preset\":\"python-hpc\"}" },
+  "model-serving":          { "component": "PipelineBuilder",          "config": "{\"preset\":\"ci-cd\"}" },
+  "mlops-pipelines":        { "component": "PipelineBuilder",          "config": "{\"preset\":\"mlops-full\"}" },
 
-  "infrastructure-as-code": { "component": "GuidedLab",                "config": "{\"preset\":\"docker-build\"}" },
-  "gitops-argocd":          { "component": "GuidedLab",                "config": "{\"preset\":\"docker-build\"}" },
+  "infrastructure-as-code": { "component": "TerminalSimulator",        "config": "{\"mode\":\"linux\"}" },
+  "gitops-argocd":          { "component": "GitVisualizer",            "config": "{\"preset\":\"gitflow\"}" },
   "observability-stack":    { "component": "NetworkTopologyViewer",     "config": null },
-  "self-service-platforms": { "component": "ProcessSchedulerViz",      "config": null },
+  "self-service-platforms": { "component": "K8sVisualizer",            "config": "{\"preset\":\"web-app\"}" },
 
   "multi-tenant-platforms": { "component": "SlurmSimulator",           "config": null },
-  "security-compliance":    { "component": "GuidedLab",                "config": "{\"preset\":\"network-debug\"}" },
+  "security-compliance":    { "component": "NetworkTopologyViewer",     "config": null },
   "cost-optimization":      { "component": "GPUMemoryVisualizer",      "config": null },
   "llm-deployment":         { "component": "GPUMemoryVisualizer",      "config": null }
 }

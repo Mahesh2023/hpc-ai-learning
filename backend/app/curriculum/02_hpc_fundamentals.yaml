@@ -48,6 +48,8 @@ lessons:
       └──────────────────────────────────────────────────────┘
       ```
 
+      :::interactive{component="NetworkTopologyViewer"}
+
       ## GPU Node Architecture
 
       A DGX-style GPU node (the workhorse of AI training):
@@ -77,6 +79,8 @@ lessons:
       ...                     │
       GPU7 ──── IB HCA 7 ────┘
       ```
+
+      :::interactive{component="GPUMemoryVisualizer"}
 
     exercises:
       - id: "hpc-arch-q1"
@@ -148,6 +152,8 @@ lessons:
       | `sacct` | Job accounting | `sacct -j 12345 --format=JobID,Elapsed,MaxRSS` |
       | `scontrol` | Job/node control | `scontrol show job 12345` |
 
+      :::interactive{component="TerminalSimulator" config='{"mode":"slurm"}'}
+
       ## Writing a SLURM Job Script
 
       ```bash
@@ -208,6 +214,8 @@ lessons:
       # Report — runs after evaluation
       sbatch --dependency=afterok:$JOB2 report.sh
       ```
+
+      :::interactive{component="ProcessSchedulerViz"}
 
     exercises:
       - id: "hpc-slurm-q1"
@@ -285,6 +293,8 @@ lessons:
 
       Run with: `mpirun -np 4 python script.py`
 
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       ## Collective Operations
 
       | Operation | Description | AI Equivalent |
@@ -315,6 +325,8 @@ lessons:
       # Now every process has the sum of all gradients
       global_gradient /= comm.Get_size()  # Average
       ```
+
+      :::interactive{component="CUDAVisualizer"}
 
     exercises:
       - id: "hpc-mpi-q1"
@@ -374,6 +386,8 @@ lessons:
       lfs df -h
       ```
 
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       ## I/O Best Practices for AI Training
 
       1. **Use large files, not millions of small ones** — Metadata operations are expensive
@@ -390,6 +404,8 @@ lessons:
       tar -xf $TMPDIR/imagenet.tar -C $TMPDIR/data/
       python train.py --data-dir $TMPDIR/data/
       ```
+
+      :::interactive{component="PipelineBuilder" config='{"preset":"ml-training-pipeline"}'}
 
     exercises:
       - id: "hpc-storage-q1"
@@ -453,6 +469,8 @@ lessons:
       # View the profile
       nsys-ui training_profile.nsys-rep
 
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       # Detailed kernel analysis
       ncu --set full \
           --target-processes all \
@@ -465,6 +483,8 @@ lessons:
       2. **High AllReduce time**: Network bottleneck — check InfiniBand health, NCCL settings
       3. **Memory OOM**: Reduce batch size, enable gradient checkpointing, use mixed precision
       4. **Slow checkpointing**: Write to local NVMe first, then async-copy to shared storage
+
+      :::interactive{component="GPUMemoryVisualizer"}
 
     exercises:
       - id: "hpc-bench-q1"

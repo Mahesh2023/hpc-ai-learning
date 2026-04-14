@@ -163,6 +163,8 @@ lessons:
       CMD ["train.py", "--epochs=10"]
       ```
 
+      :::interactive{component="TerminalSimulator" config='{"mode":"docker"}'}
+
       ## 3. Multi-Stage Builds
 
       ML/HPC images often balloon to 10+ GB because build tools, headers,
@@ -200,6 +202,8 @@ lessons:
       | Image size   | 8.2 GB      | 1.8 GB      |
       | Attack surface | Large     | Minimal     |
       | Build tools  | Included    | Excluded    |
+
+      :::interactive{component="DockerLayerVisualizer"}
 
       ## 4. Building ML/HPC Images
 
@@ -801,6 +805,8 @@ lessons:
       apptainer exec container.sif ls /usr/local/bin/
       ```
 
+      :::interactive{component="DockerLayerVisualizer"}
+
       ## 3. Building Images
 
       ### 3.1 From Definition Files (.def)
@@ -911,6 +917,8 @@ lessons:
       apptainer exec instance://myservice curl http://localhost:8080
       apptainer instance stop myservice
       ```
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
 
       ### 4.2 Environment Variables
 
@@ -1453,6 +1461,8 @@ lessons:
         └────────────────────────────────────────────────────┘
       ```
 
+      :::interactive{component="K8sVisualizer"}
+
       ### 1.1 Control Plane Components
 
       | Component              | Role                                          |
@@ -1609,6 +1619,8 @@ lessons:
       kubectl rollout undo deployment/inference-api --to-revision=2
       kubectl scale deployment/inference-api --replicas=5
       ```
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
 
       ## 4. Services
 
@@ -2357,6 +2369,8 @@ lessons:
       └─────────────────────────────────────────────────┘
       ```
 
+      :::interactive{component="K8sVisualizer" config='{"preset":"ml-training"}'}
+
       ### 1.1 Installing the GPU Operator
 
       ```bash
@@ -2505,6 +2519,8 @@ lessons:
       └───────────────────────────────────────────────────┘
       ```
 
+      :::interactive{component="GPUMemoryVisualizer"}
+
       ### 3.1 MIG Profiles
 
       | Profile (A100 80GB)  | SMs  | Memory  | Use Case                    |
@@ -2580,6 +2596,8 @@ lessons:
                 devices: [4,5,6,7]
                 mig-enabled: false
       ```
+
+      :::interactive{component="CUDAVisualizer"}
 
       ## 4. GPU Monitoring with DCGM
 
@@ -3316,6 +3334,8 @@ lessons:
       helm history my-mlflow
       ```
 
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       ## 3. Chart Structure
 
       ```
@@ -3755,6 +3775,8 @@ lessons:
       # Destroy everything
       helmfile destroy
       ```
+
+      :::interactive{component="PipelineBuilder" config='{"preset":"ci-cd"}'}
 
       ## 8. Best Practices
 

@@ -17,44 +17,80 @@ lessons:
       - "Compare GPU and CPU architectures and their suitability for ML workloads"
       - "Understand the CUDA programming model: grids, blocks, and threads"
       - "Describe GPU memory hierarchy and its impact on performance"
-      - "Explain mixed-precision training and its benefits"
+      - "Master warp execution, memory coalescing, and occupancy tuning"
+      - "Explain mixed-precision training with FP16, BF16, and TF32"
+      - "Profile GPU kernels with Nsight Systems and nvidia-smi"
     content_md: |
       # GPU Computing & CUDA Basics
 
-      ## GPU vs CPU Architecture
+      ## 1. GPU vs CPU Architecture
 
       CPUs are optimized for **latency** — a few powerful cores that excel at
-      sequential tasks. GPUs are optimized for **throughput** — thousands of
-      simpler cores that process data in parallel.
+      sequential tasks with deep branch prediction and large caches. GPUs are
+      optimized for **throughput** — thousands of simpler cores that process
+      data in massive parallel waves.
 
       ```
-      CPU (e.g., AMD EPYC 9654)          GPU (e.g., NVIDIA H100 SXM)
-      ┌─────────────────────────┐        ┌─────────────────────────────┐
-      │ 96 cores @ 2.4 GHz     │        │ 16,896 CUDA cores @ 1.8 GHz│
-      │ 384 MB L3 cache        │        │ 528 Tensor Cores (4th gen)  │
-      │ 12-ch DDR5 (460 GB/s)  │        │ 80 GB HBM3 (3.35 TB/s)     │
-      │ ~4 TFLOPS FP32         │        │ ~990 TFLOPS FP16 (Tensor)   │
-      └─────────────────────────┘        └─────────────────────────────┘
+      CPU (e.g., AMD EPYC 9654)              GPU (e.g., NVIDIA H100 SXM)
+      ┌───────────────────────────────┐      ┌────────────────────────────────────┐
+      │  96 cores @ 2.4 GHz (boost    │      │  132 Streaming Multiprocessors     │
+      │        3.55 GHz)               │      │  16,896 CUDA cores @ 1.83 GHz     │
+      │  384 MB L3 cache               │      │  528 Tensor Cores (4th gen)        │
+      │  12-channel DDR5 (460 GB/s)    │      │  80 GB HBM3 (3.35 TB/s)           │
+      │  ~4 TFLOPS FP32               │      │  ~67 TFLOPS FP32 (CUDA cores)     │
+      │                                │      │  ~990 TFLOPS FP16 (Tensor Cores)  │
+      │  Branch predictor: deep        │      │  50 MB L2 cache                   │
+      │  Out-of-order execution        │      │  In-order execution per warp      │
+      │  AVX-512 SIMD (512-bit)        │      │  SIMT: 32-wide warps             │
+      └───────────────────────────────┘      └────────────────────────────────────┘
       ```
 
-      The H100 delivers ~250× the floating-point throughput of a high-end CPU.
-      This is why matrix multiplications — the core of neural networks — are
-      dramatically faster on GPUs.
+      The H100 delivers ~250× the floating-point throughput of a high-end CPU
+      for FP16 tensor operations. This is why matrix multiplications — the
+      fundamental operation in neural networks — are dramatically faster on GPUs.
 
-      ## The CUDA Programming Model
+      ### Why GPUs Excel at Deep Learning
+
+      Neural network training is dominated by General Matrix Multiply (GEMM)
+      operations. A single transformer forward pass for a 7B-parameter model
+      at batch size 1 involves:
+
+      ```
+      Operation                  FLOPs (approximate)
+      ──────────────────────────────────────────────
+      QKV projection             ~3 × 2 × 4096 × 4096 = 100M per layer
+      Attention scores           ~2 × seq_len² × 128
+      Feed-forward (up + down)   ~2 × 2 × 4096 × 11008 = 180M per layer
+      Total (32 layers)          ~8.96 TFLOP for seq_len=2048
+      ```
+
+      At FP16 Tensor Core throughput of 990 TFLOPS, the H100 can
+      theoretically complete this in under 10 ms — the GPU's massive
+      parallelism turns hours of CPU compute into milliseconds.
+
+      ## 2. The CUDA Programming Model
 
       CUDA (Compute Unified Device Architecture) is NVIDIA's parallel
       computing platform. The programming model is hierarchical:
 
       ```
-      Grid
-      ├── Block (0,0)    Block (0,1)    Block (0,2)
-      │   ├── Thread 0   ├── Thread 0   ├── Thread 0
-      │   ├── Thread 1   ├── Thread 1   ├── Thread 1
-      │   ├── ...        ├── ...        ├── ...
-      │   └── Thread 255 └── Thread 255 └── Thread 255
-      ├── Block (1,0)    Block (1,1)    Block (1,2)
-      │   └── ...        └── ...        └── ...
+      ┌─────────────────── Grid ────────────────────────┐
+      │                                                  │
+      │  ┌──────────┐  ┌──────────┐  ┌──────────┐      │
+      │  │ Block(0,0)│  │ Block(0,1)│  │ Block(0,2)│      │
+      │  │ 256 thds  │  │ 256 thds  │  │ 256 thds  │      │
+      │  └──────────┘  └──────────┘  └──────────┘      │
+      │  ┌──────────┐  ┌──────────┐  ┌──────────┐      │
+      │  │ Block(1,0)│  │ Block(1,1)│  │ Block(1,2)│      │
+      │  │ 256 thds  │  │ 256 thds  │  │ 256 thds  │      │
+      │  └──────────┘  └──────────┘  └──────────┘      │
+      │                                                  │
+      │  Grid dimensions: gridDim.x × gridDim.y         │
+      │  Block dimensions: blockDim.x × blockDim.y      │
+      └──────────────────────────────────────────────────┘
+
+      Thread Identification:
+        globalIdx = blockIdx.x * blockDim.x + threadIdx.x
       ```
 
       A simple CUDA kernel for vector addition:
@@ -67,7 +103,7 @@ lessons:
           }
       }
 
-      // Launch with 256 threads per block
+      // Launch configuration
       int threadsPerBlock = 256;
       int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
       vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(d_a, d_b, d_c, n);
@@ -75,60 +111,186 @@ lessons:
 
       As ML practitioners, you rarely write raw CUDA. Instead, frameworks like
       PyTorch and TensorFlow call cuBLAS, cuDNN, and cuFFT under the hood.
+      However, understanding the model is essential for performance tuning.
 
-      ## GPU Memory Hierarchy
+      :::interactive{component="CUDAVisualizer"}
 
-      Understanding memory hierarchy is critical for performance:
+      ## 3. Warps and Thread Execution
 
-      | Memory Type       | Size     | Bandwidth    | Latency    | Scope        |
-      |-------------------|----------|-------------|------------|--------------|
-      | Registers         | 256 KB/SM| ~20 TB/s    | 1 cycle    | Per thread   |
-      | Shared Memory     | 228 KB/SM| ~19 TB/s    | ~20 cycles | Per block    |
-      | L2 Cache          | 50 MB    | ~12 TB/s    | ~200 cycles| All SMs      |
-      | HBM3 (Global)     | 80 GB    | 3.35 TB/s   | ~400 cycles| All SMs      |
-      | CPU RAM (via PCIe)| TBs      | 64 GB/s     | ~10K cycles| Host ↔ Device|
+      The GPU schedules threads in groups of 32 called **warps**. Every
+      thread in a warp executes the same instruction at the same time (SIMT —
+      Single Instruction, Multiple Threads).
 
-      The key bottleneck is **CPU↔GPU data transfer** over PCIe — 50× slower
-      than HBM. Minimize transfers by keeping data on the GPU.
+      ```
+      Block (256 threads)
+      ┌──────────────────────────────────────────┐
+      │  Warp 0:  threads  0 – 31               │
+      │  Warp 1:  threads 32 – 63               │
+      │  Warp 2:  threads 64 – 95               │
+      │  Warp 3:  threads 96 –127               │
+      │  Warp 4:  threads128 –159               │
+      │  Warp 5:  threads160 –191               │
+      │  Warp 6:  threads192 –223               │
+      │  Warp 7:  threads224 –255               │
+      └──────────────────────────────────────────┘
+
+      SM Warp Scheduler (H100 has 4 per SM):
+      ┌────────────┐
+      │ Scheduler 0│──→ issues 1 instruction to Warp 0
+      │ Scheduler 1│──→ issues 1 instruction to Warp 3
+      │ Scheduler 2│──→ issues 1 instruction to Warp 5
+      │ Scheduler 3│──→ issues 1 instruction to Warp 7
+      └────────────┘
+      Each clock cycle, the scheduler picks an eligible warp.
+      ```
+
+      **Warp divergence** occurs when threads in the same warp take different
+      branches of an `if` statement. Both paths are executed serially, with
+      threads masked out for the branch they did not take:
+
+      ```cuda
+      // BAD: 50% warp divergence
+      if (threadIdx.x % 2 == 0) {
+          // Even threads execute here (odd threads idle)
+          a[idx] = compute_even(idx);
+      } else {
+          // Odd threads execute here (even threads idle)
+          a[idx] = compute_odd(idx);
+      }
+
+      // GOOD: warp-aligned branching
+      if (threadIdx.x < 16) {
+          // First half-warp: all in same warp take same branch
+          a[idx] = compute_first(idx);
+      } else {
+          a[idx] = compute_second(idx);
+      }
+      ```
+
+      ## 4. GPU Memory Hierarchy Deep Dive
+
+      Understanding the memory hierarchy is critical for GPU performance:
+
+      ```
+      ┌─────────────────────────────────────────────────────────┐
+      │                   Per-Thread                             │
+      │   ┌────────────┐                                        │
+      │   │ Registers  │  256 KB / SM, ~20 TB/s, 1 cycle       │
+      │   └──────┬─────┘                                        │
+      │          ▼                                               │
+      │   ┌────────────┐  Per-Block                             │
+      │   │  Shared    │  228 KB / SM, ~19 TB/s, ~20 cycles    │
+      │   │  Memory    │  (configurable vs L1 cache)            │
+      │   └──────┬─────┘                                        │
+      │          ▼                                               │
+      │   ┌────────────┐  Per-SM                                │
+      │   │  L1 Cache  │  256 KB / SM (shared with SMEM)       │
+      │   └──────┬─────┘                                        │
+      │          ▼                                               │
+      │   ┌────────────┐  Chip-wide                             │
+      │   │  L2 Cache  │  50 MB, ~12 TB/s, ~200 cycles         │
+      │   └──────┬─────┘                                        │
+      │          ▼                                               │
+      │   ┌────────────┐  Device                                │
+      │   │  HBM3      │  80 GB, 3.35 TB/s, ~400 cycles        │
+      │   │ (Global)   │                                        │
+      │   └──────┬─────┘                                        │
+      │          ▼                                               │
+      │   ┌────────────┐  Host                                  │
+      │   │  CPU RAM   │  TBs, 64 GB/s (PCIe 5.0), ~10K cycles│
+      │   │ (via PCIe) │  or 900 GB/s (NVLink)                 │
+      │   └────────────┘                                        │
+      └─────────────────────────────────────────────────────────┘
+      ```
+
+      | Memory Type       | Size      | Bandwidth   | Latency     | Scope        |
+      |-------------------|-----------|-------------|-------------|--------------|
+      | Registers         | 256 KB/SM | ~20 TB/s    | 1 cycle     | Per thread   |
+      | Shared Memory     | 228 KB/SM | ~19 TB/s    | ~20 cycles  | Per block    |
+      | L1 Cache          | 256 KB/SM | ~19 TB/s    | ~30 cycles  | Per SM       |
+      | L2 Cache          | 50 MB     | ~12 TB/s    | ~200 cycles | All SMs      |
+      | HBM3 (Global)     | 80 GB     | 3.35 TB/s   | ~400 cycles | All SMs      |
+      | CPU RAM (PCIe)    | TBs       | 64 GB/s     | ~10K cycles | Host-Device  |
+
+      ### Memory Coalescing
+
+      When threads in a warp access **contiguous** memory addresses, the
+      hardware combines (coalesces) them into a single wide transaction.
+      Non-coalesced access can reduce effective bandwidth by 10-32×.
+
+      ```
+      COALESCED (good):                 NON-COALESCED (bad):
+      Thread 0 → addr 0x1000           Thread 0 → addr 0x1000
+      Thread 1 → addr 0x1004           Thread 1 → addr 0x2000
+      Thread 2 → addr 0x1008           Thread 2 → addr 0x3000
+      Thread 3 → addr 0x100C           Thread 3 → addr 0x4000
+      ...                               ...
+      → 1 memory transaction (128B)    → 32 memory transactions!
+      ```
 
       ```python
       import torch
 
-      # BAD: repeated CPU↔GPU transfers
-      for batch in dataloader:
-          x = batch.to('cuda')          # PCIe transfer each iteration
-          output = model(x)
-          loss = output.to('cpu').item() # Another transfer
+      # COALESCED: row-major access (default for PyTorch)
+      tensor = torch.randn(1024, 1024, device='cuda')
+      row_sum = tensor.sum(dim=1)  # reads contiguous rows
 
-      # GOOD: pin memory and use non_blocking transfers
-      dataloader = DataLoader(dataset, pin_memory=True, num_workers=4)
-      for batch in dataloader:
-          x = batch.to('cuda', non_blocking=True)  # Async DMA transfer
-          output = model(x)
+      # NON-COALESCED: column-major access
+      col_sum = tensor.sum(dim=0)  # strides across rows — slower
+      # Fix: transpose first, then reduce on contiguous dim
+      col_sum = tensor.T.contiguous().sum(dim=1)
       ```
 
-      ## cuDNN and Kernel Auto-tuning
+      ## 5. Shared Memory and Bank Conflicts
 
-      cuDNN provides optimized implementations of convolutions, attention,
-      normalization, and other neural network operations. Enable benchmarking
-      to auto-select the fastest kernel:
+      Shared memory is divided into 32 **banks**. If multiple threads in
+      the same warp access the same bank (but different addresses), a **bank
+      conflict** occurs, serializing those accesses:
 
-      ```python
-      torch.backends.cudnn.benchmark = True   # Auto-tune convolution kernels
-      torch.backends.cudnn.deterministic = False  # Allow non-deterministic algos
+      ```
+      32 Banks (4-byte stride):
+      Bank 0:  addr 0, 128, 256, ...
+      Bank 1:  addr 4, 132, 260, ...
+      Bank 2:  addr 8, 136, 264, ...
+      ...
+      Bank 31: addr 124, 252, 380, ...
+
+      No conflict:  Thread i → Bank i     (one-to-one)
+      Broadcast:    All threads → Bank 0   (same addr — OK)
+      2-way conflict: Thread 0,16 → Bank 0 (2× serialization)
       ```
 
-      ## Mixed Precision Training
+      ## 6. Mixed Precision Training — FP16, BF16, TF32
 
       Modern GPUs have dedicated **Tensor Cores** that perform matrix
-      multiplications in FP16/BF16 at 2–8× the speed of FP32:
+      multiplications in reduced precision at 2-16× the speed of FP32:
+
+      ```
+      Format    Exponent  Mantissa  Range        Precision   H100 TFLOPS
+      ────────────────────────────────────────────────────────────────────
+      FP32      8 bits    23 bits   ±3.4×10³⁸   ~7 digits   67
+      TF32      8 bits    10 bits   ±3.4×10³⁸   ~3 digits   ~500
+      BF16      8 bits    7 bits    ±3.4×10³⁸   ~2 digits   990
+      FP16      5 bits    10 bits   ±65504       ~3 digits   990
+      FP8 E4M3  4 bits    3 bits    ±448         ~1 digit    1979
+      FP8 E5M2  5 bits    2 bits    ±57344       ~0.6 digit  1979
+      ```
+
+      **Key differences:**
+      - **BF16**: Same exponent range as FP32 — rarely overflows, no loss
+        scaling needed in most cases. Preferred for training.
+      - **FP16**: Smaller range — requires `GradScaler` to prevent gradient
+        underflow. Higher mantissa precision than BF16.
+      - **TF32**: NVIDIA-specific format used internally by Tensor Cores
+        when processing FP32 inputs. Enabled by default on Ampere+.
 
       ```python
       from torch.cuda.amp import autocast, GradScaler
 
+      # BF16 mixed precision — recommended on Ampere+ (A100, H100)
       scaler = GradScaler()
       for batch in dataloader:
-          optimizer.zero_grad()
+          optimizer.zero_grad(set_to_none=True)
           with autocast(dtype=torch.bfloat16):
               output = model(batch['input_ids'].cuda())
               loss = criterion(output, batch['labels'].cuda())
@@ -137,15 +299,267 @@ lessons:
           scaler.update()
       ```
 
-      **BF16 vs FP16:**
-      - FP16: 5-bit exponent, 10-bit mantissa — higher precision, smaller range
-      - BF16: 8-bit exponent, 7-bit mantissa — same range as FP32, less precision
-      - BF16 rarely needs loss scaling; FP16 requires `GradScaler` to avoid underflow
+      **TF32 mode** (transparent — no code changes needed):
 
-      On H100 GPUs, BF16 Tensor Core operations deliver ~990 TFLOPS vs
-      ~67 TFLOPS for FP32 CUDA cores — a **15× speedup**.
+      ```python
+      # TF32 is enabled by default on Ampere+. To verify or control:
+      torch.backends.cuda.matmul.allow_tf32 = True   # default: True
+      torch.backends.cudnn.allow_tf32 = True          # default: True
+      # This gives ~8× speedup on matmuls with no code change, but
+      # reduces precision from ~7 to ~3 significant digits.
+      ```
+
+      ## 7. Tensor Cores — The ML Accelerator
+
+      Tensor Cores perform mixed-precision matrix multiply-accumulate
+      (MMA) on small tiles. On the H100, a single Tensor Core computes:
+
+      ```
+      D[m×n] = A[m×k] × B[k×n] + C[m×n]
+
+      Where tile sizes depend on precision:
+        FP16/BF16:  m=16, n=8, k=16  → 4096 FMA ops / clock / TC
+        FP8:        m=16, n=8, k=32  → 8192 FMA ops / clock / TC
+        INT8:       m=16, n=8, k=32  → 8192 MAC ops / clock / TC
+
+      H100 has 528 Tensor Cores (4 per SM × 132 SMs)
+      At 1.83 GHz: 528 × 4096 × 2 × 1.83G ≈ 990 TFLOPS (FP16)
+      ```
+
+      cuBLAS and cuDNN automatically use Tensor Cores when dimensions
+      are multiples of 8 (FP16) or 16 (INT8). **Always pad your
+      dimensions to multiples of 8** for maximum Tensor Core utilization.
+
+      ## 8. CUDA Streams and Asynchronous Execution
+
+      CUDA streams allow overlapping compute, memory transfers, and
+      kernel execution:
+
+      ```python
+      import torch
+
+      stream1 = torch.cuda.Stream()
+      stream2 = torch.cuda.Stream()
+
+      # Overlap data transfer with computation
+      with torch.cuda.stream(stream1):
+          data_gpu = data_cpu.to('cuda', non_blocking=True)
+
+      with torch.cuda.stream(stream2):
+          # Compute on previously loaded data
+          result = model(prev_data_gpu)
+
+      # Synchronize when needed
+      torch.cuda.synchronize()
+      ```
+
+      ```
+      Timeline without streams:
+      ──[Transfer]──────[Compute]──────[Transfer]──────[Compute]──
+
+      Timeline with streams:
+      Stream 1: ──[Transfer batch N+1]────[Transfer batch N+2]──
+      Stream 2: ──[Compute batch N  ]────[Compute batch N+1 ]──
+                 ^^^^^^^^ overlap ^^^^^^^^
+      ```
+
+      ## 9. nvidia-smi Deep Dive
+
+      `nvidia-smi` is the primary tool for monitoring GPU health and usage:
+
+      ```bash
+      # Basic status
+      nvidia-smi
+
+      # Continuous monitoring (refresh every 1 second)
+      nvidia-smi --loop=1
+
+      # Query specific metrics in CSV format
+      nvidia-smi --query-gpu=timestamp,name,temperature.gpu,\
+      utilization.gpu,utilization.memory,memory.used,memory.total,\
+      power.draw,clocks.sm,clocks.mem \
+      --format=csv -l 1
+
+      # Per-process GPU memory usage
+      nvidia-smi pmon -i 0 -s mu -d 1
+
+      # Check NVLink topology and bandwidth
+      nvidia-smi topo -m
+      nvidia-smi nvlink -s
+      ```
+
+      **Key metrics to watch:**
+
+      ```
+      Metric                    Healthy Range    Problem Signal
+      ──────────────────────────────────────────────────────────
+      GPU Utilization           > 90%            < 50% = CPU bottleneck
+      Memory Utilization        60-95%           > 98% = OOM risk
+      Temperature               < 83°C          > 90°C = throttling
+      Power Draw                < TDP            At TDP = power throttle
+      SM Clock                  Max boost        Below base = throttle
+      PCIe Throughput           Expected BW      Near zero = stall
+      ```
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
+      ## 10. Nsight Systems Profiling
+
+      For detailed kernel-level profiling, use NVIDIA Nsight Systems:
+
+      ```bash
+      # Profile a PyTorch training script
+      nsys profile \
+        --trace=cuda,nvtx,osrt \
+        --output=training_profile \
+        --force-overwrite true \
+        python train.py --epochs 1
+
+      # Generate a summary report
+      nsys stats training_profile.nsys-rep
+
+      # Profile with custom NVTX markers in Python
+      ```
+
+      ```python
+      import torch
+      import nvtx   # pip install nvtx
+
+      @nvtx.annotate("forward_pass", color="green")
+      def forward(model, batch):
+          return model(batch)
+
+      @nvtx.annotate("backward_pass", color="red")
+      def backward(loss):
+          loss.backward()
+
+      # Profile shows named regions in the timeline
+      for batch in dataloader:
+          with nvtx.annotate("data_transfer", color="blue"):
+              batch = batch.to('cuda', non_blocking=True)
+          output = forward(model, batch)
+          loss = criterion(output, labels)
+          backward(loss)
+      ```
+
+      ## 11. Practical: Monitoring GPU Memory
+
+      ```python
+      import torch
+
+      def gpu_mem_report(tag=""):
+          """Print GPU memory statistics."""
+          allocated = torch.cuda.memory_allocated() / 1024**3
+          reserved  = torch.cuda.memory_reserved() / 1024**3
+          peak      = torch.cuda.max_memory_allocated() / 1024**3
+          print(f"[{tag}] Alloc: {allocated:.2f} GB | "
+                f"Reserved: {reserved:.2f} GB | Peak: {peak:.2f} GB")
+
+      torch.cuda.reset_peak_memory_stats()
+      gpu_mem_report("start")
+
+      model = MyLargeModel().cuda()
+      gpu_mem_report("model loaded")
+
+      dummy = torch.randn(32, 3, 224, 224, device='cuda')
+      with torch.no_grad():
+          out = model(dummy)
+      gpu_mem_report("after inference")
+
+      print(torch.cuda.memory_summary(abbreviated=True))
+      ```
+
+      ## 12. cuDNN and Kernel Auto-tuning
+
+      cuDNN provides optimized implementations of convolutions, attention,
+      normalization, and other neural network operations. Enable benchmarking
+      to auto-select the fastest kernel for your specific input sizes:
+
+      ```python
+      torch.backends.cudnn.benchmark = True   # Auto-tune convolution kernels
+      torch.backends.cudnn.deterministic = False  # Allow non-deterministic algos
+
+      # cuDNN benchmark caches the best kernel per input size.
+      # First iteration is slow (benchmarking), subsequent calls are fast.
+      # WARNING: if input sizes vary, benchmark may hurt performance
+      # because it re-benchmarks on every new size.
+      ```
+
+      ## 13. Occupancy and Performance Tuning
+
+      **Occupancy** is the ratio of active warps to maximum warps per SM.
+      Higher occupancy generally means better latency hiding:
+
+      ```
+      H100 SM Resources:
+      ┌────────────────────────────────────────────┐
+      │  Max threads per SM:  2048 (64 warps)     │
+      │  Max threads per block: 1024               │
+      │  Max blocks per SM:  32                    │
+      │  Registers per SM:  65536 (32-bit)        │
+      │  Shared memory:  228 KB (configurable)    │
+      └────────────────────────────────────────────┘
+
+      Occupancy limiters:
+      1. Registers per thread × threads > 65536 → reduce occupancy
+      2. Shared memory per block × blocks > 228 KB → reduce occupancy
+      3. Block size < 128 → underutilize warp schedulers
+
+      Sweet spot: 256 threads/block, 32-64 regs/thread → ~50-75% occupancy
+      ```
+
+      To check occupancy for a given kernel configuration:
+
+      ```python
+      # Using CUDA Occupancy Calculator (conceptual)
+      # threads_per_block = 256
+      # registers_per_thread = 32
+      # shared_mem_per_block = 4096 bytes
+      #
+      # active_blocks = min(
+      #     2048 // 256,             # thread limit → 8
+      #     65536 // (32 * 256),     # register limit → 8
+      #     228*1024 // 4096,        # shared mem limit → 57
+      #     32                        # block limit
+      # ) = 8
+      # active_warps = 8 * (256/32) = 64
+      # occupancy = 64/64 = 100%
+      ```
+
+      ## 14. Multi-GPU Topologies
+
+      Understanding GPU interconnect topology is crucial for scaling:
+
+      ```
+      DGX H100 Topology (8 GPUs):
+      ┌─────────────────────────────────────────────────┐
+      │                 NVSwitch Fabric                  │
+      │           (900 GB/s per GPU, all-to-all)         │
+      │                                                  │
+      │   GPU0 ──── GPU1 ──── GPU2 ──── GPU3            │
+      │    │         │         │         │               │
+      │   GPU4 ──── GPU5 ──── GPU6 ──── GPU7            │
+      │                                                  │
+      │   Each GPU: 80 GB HBM3                          │
+      │   Total: 640 GB GPU memory                      │
+      │   Inter-GPU: 900 GB/s (NVLink 4.0, 18 links)  │
+      │   CPU↔GPU: 64 GB/s (PCIe 5.0 x16)             │
+      └─────────────────────────────────────────────────┘
+
+      Check topology: nvidia-smi topo -m
+
+           GPU0 GPU1 GPU2 GPU3 GPU4 GPU5 GPU6 GPU7
+      GPU0  X    NV   NV   NV   NV   NV   NV   NV
+      GPU1  NV   X    NV   NV   NV   NV   NV   NV
+      GPU2  NV   NV   X    NV   NV   NV   NV   NV
+      ...
+      NV = NVLink, SYS = PCIe via CPU, PHB = PCIe via bridge
+      ```
+
+      :::interactive{component="GPUMemoryVisualizer"}
 
     exercises:
+      # ---- Exercise 1: Quiz — Memory Hierarchy ----
       - id: "aiml-gpu-q1"
         title: "GPU Memory Bottleneck"
         description: "What is typically the biggest memory bandwidth bottleneck when training neural networks on GPUs?"
@@ -162,75 +576,208 @@ lessons:
           - "Think about what happens every time you call tensor.to('cuda')."
         solution: "The PCIe bus connecting CPU and GPU is the biggest bottleneck at ~64 GB/s (PCIe 5.0 x16), which is roughly 50× slower than HBM3 bandwidth (3.35 TB/s). This is why best practices include using pinned memory, non-blocking transfers, multiple data loading workers, and keeping data on the GPU as long as possible. NVLink between GPUs provides 900 GB/s, which is also much faster than PCIe."
 
-      - id: "aiml-gpu-code1"
-        title: "Mixed Precision Training Loop"
-        description: "Write a PyTorch training loop that uses automatic mixed precision (AMP) with BF16 and GradScaler. Include a forward pass, loss computation, backward pass, and optimizer step for a model and optimizer that are already defined."
-        exercise_type: "coding"
+      # ---- Exercise 2: Quiz — Warp Divergence ----
+      - id: "aiml-gpu-q2"
+        title: "Warp Execution and Divergence"
+        description: "A CUDA block has 256 threads. An if-else statement branches based on `threadIdx.x % 2 == 0`. How many warps experience divergence?"
+        exercise_type: "quiz"
         difficulty: 3
+        options:
+          - "0 warps — branching has no effect on warp execution"
+          - "4 warps — only the first four warps are affected"
+          - "8 warps — all warps in the block experience divergence"
+          - "16 warps — half of all warps diverge"
+        correct_answer: "8 warps — all warps in the block experience divergence"
         hints:
-          - "Use torch.cuda.amp.autocast with dtype=torch.bfloat16."
-          - "GradScaler wraps the loss scaling and optimizer step."
-          - "Call scaler.scale(loss).backward() instead of loss.backward()."
+          - "A block of 256 threads has 256/32 = 8 warps."
+          - "Within each warp, threads 0,2,4...30 are even and 1,3,5...31 are odd."
+          - "Since every warp has both even and odd threadIdx.x values, every warp diverges."
+        solution: "A block of 256 threads contains 8 warps (256/32). When branching on `threadIdx.x % 2 == 0`, every warp contains both even and odd threads (threads 0-31 in warp 0, 32-63 in warp 1, etc.). Therefore all 8 warps experience divergence: each warp must execute both the if-branch (with odd threads masked) and the else-branch (with even threads masked), effectively halving throughput. To avoid this, branch on warp-aligned boundaries like `threadIdx.x < 128`."
+
+      # ---- Exercise 3: Coding — Grid Dimension Calculator ----
+      - id: "aiml-gpu-code1"
+        title: "CUDA Grid Dimension Calculator"
+        description: "Write a Python function `calculate_launch_config(n, threads_per_block)` that returns a tuple `(grid_blocks, threads_per_block)` representing the CUDA launch configuration needed to process `n` elements. Use the ceiling-division formula to compute grid_blocks."
+        exercise_type: "coding"
+        difficulty: 2
+        starter_code: |
+          def calculate_launch_config(n, threads_per_block=256):
+              """
+              Calculate CUDA kernel launch configuration.
+
+              Args:
+                  n: Total number of elements to process.
+                  threads_per_block: Threads per block (default 256).
+
+              Returns:
+                  Tuple of (grid_blocks, threads_per_block).
+              """
+              # TODO: compute grid_blocks using ceiling division
+              pass
+        test_cases:
+          - input: "print(calculate_launch_config(1000, 256))"
+            expected_output: "(4, 256)"
+          - input: "print(calculate_launch_config(1024, 256))"
+            expected_output: "(4, 256)"
+          - input: "print(calculate_launch_config(1025, 256))"
+            expected_output: "(5, 256)"
+          - input: "print(calculate_launch_config(1, 128))"
+            expected_output: "(1, 128)"
+          - input: "print(calculate_launch_config(1000000, 512))"
+            expected_output: "(1954, 512)"
+        hints:
+          - "Ceiling division: (n + d - 1) // d"
+          - "Make sure to return a tuple of two integers."
+          - "Even if n is exactly divisible, the formula still works."
         solution: |
           ```python
-          from torch.cuda.amp import autocast, GradScaler
-
-          scaler = GradScaler()
-          model.train()
-
-          for epoch in range(num_epochs):
-              for batch in dataloader:
-                  inputs = batch['input'].to('cuda', non_blocking=True)
-                  labels = batch['label'].to('cuda', non_blocking=True)
-
-                  optimizer.zero_grad(set_to_none=True)
-
-                  with autocast(dtype=torch.bfloat16):
-                      outputs = model(inputs)
-                      loss = criterion(outputs, labels)
-
-                  scaler.scale(loss).backward()
-                  scaler.step(optimizer)
-                  scaler.update()
+          def calculate_launch_config(n, threads_per_block=256):
+              grid_blocks = (n + threads_per_block - 1) // threads_per_block
+              return (grid_blocks, threads_per_block)
           ```
-          Using `set_to_none=True` in zero_grad is a minor optimization
-          that avoids a memset to zero, instead setting gradients to None.
+          The ceiling-division formula `(n + d - 1) // d` ensures we launch
+          enough blocks to cover all n elements. The kernel itself should
+          guard with `if (idx < n)` to prevent out-of-bounds access for
+          threads in the last (partially filled) block.
 
-      - id: "aiml-gpu-lab1"
-        title: "GPU Memory Profiling"
-        description: "Write a Python script that profiles GPU memory allocation during model loading and inference. Use torch.cuda.memory_allocated(), torch.cuda.max_memory_allocated(), and torch.cuda.memory_summary() to track memory at each stage: (1) empty GPU, (2) after loading model, (3) after a forward pass."
-        exercise_type: "lab"
+      # ---- Exercise 4: Coding — Mixed Precision Training Loop ----
+      - id: "aiml-gpu-code2"
+        title: "Mixed Precision Config Builder"
+        description: "Write a Python function `build_amp_config(precision, use_grad_scaler)` that returns a dictionary containing the AMP configuration for a PyTorch training loop. The dict should have keys: 'dtype' (the torch dtype), 'scaler_enabled' (boolean), and 'tensor_core_aligned_dim' (the minimum dimension multiple for Tensor Core efficiency — 8 for FP16/BF16, 16 for INT8)."
+        exercise_type: "coding"
         difficulty: 3
+        starter_code: |
+          def build_amp_config(precision="bf16", use_grad_scaler=None):
+              """
+              Build AMP configuration dictionary.
+
+              Args:
+                  precision: One of "fp32", "fp16", "bf16", "tf32", "int8".
+                  use_grad_scaler: Override scaler setting (None = auto).
+
+              Returns:
+                  Dictionary with 'dtype', 'scaler_enabled', 'tensor_core_aligned_dim'.
+              """
+              # TODO: implement the logic
+              pass
+        test_cases:
+          - input: "c = build_amp_config('bf16'); print(c['dtype'], c['scaler_enabled'], c['tensor_core_aligned_dim'])"
+            expected_output: "torch.bfloat16 False 8"
+          - input: "c = build_amp_config('fp16'); print(c['dtype'], c['scaler_enabled'], c['tensor_core_aligned_dim'])"
+            expected_output: "torch.float16 True 8"
+          - input: "c = build_amp_config('fp32'); print(c['dtype'], c['scaler_enabled'], c['tensor_core_aligned_dim'])"
+            expected_output: "torch.float32 False 1"
+          - input: "c = build_amp_config('int8'); print(c['dtype'], c['scaler_enabled'], c['tensor_core_aligned_dim'])"
+            expected_output: "torch.int8 False 16"
+          - input: "c = build_amp_config('fp16', use_grad_scaler=False); print(c['scaler_enabled'])"
+            expected_output: "False"
         hints:
-          - "Call torch.cuda.reset_peak_memory_stats() at the start."
-          - "Use torch.cuda.memory_allocated() to get current usage in bytes."
-          - "Convert bytes to GB by dividing by 1024**3."
+          - "BF16 has the same exponent range as FP32 so it rarely needs a GradScaler."
+          - "FP16 has a narrow range and typically needs a GradScaler to prevent underflow."
+          - "FP32 doesn't use Tensor Cores directly (alignment = 1), unless TF32 mode is on."
+          - "INT8 Tensor Cores require dimensions to be multiples of 16."
         solution: |
           ```python
           import torch
-          from torchvision.models import resnet50
 
-          def print_mem(stage):
-              allocated = torch.cuda.memory_allocated() / 1024**3
-              peak = torch.cuda.max_memory_allocated() / 1024**3
-              print(f"[{stage}] Allocated: {allocated:.2f} GB | Peak: {peak:.2f} GB")
-
-          torch.cuda.reset_peak_memory_stats()
-          print_mem("Empty GPU")
-
-          model = resnet50().cuda()
-          print_mem("Model loaded")
-
-          dummy_input = torch.randn(32, 3, 224, 224, device='cuda')
-          with torch.no_grad():
-              output = model(dummy_input)
-          print_mem("After inference")
-
-          print(torch.cuda.memory_summary(abbreviated=True))
+          def build_amp_config(precision="bf16", use_grad_scaler=None):
+              config_map = {
+                  "fp32":  {"dtype": torch.float32,  "auto_scaler": False, "align": 1},
+                  "tf32":  {"dtype": torch.float32,  "auto_scaler": False, "align": 8},
+                  "fp16":  {"dtype": torch.float16,  "auto_scaler": True,  "align": 8},
+                  "bf16":  {"dtype": torch.bfloat16, "auto_scaler": False, "align": 8},
+                  "int8":  {"dtype": torch.int8,     "auto_scaler": False, "align": 16},
+              }
+              cfg = config_map[precision]
+              scaler = use_grad_scaler if use_grad_scaler is not None else cfg["auto_scaler"]
+              return {
+                  "dtype": cfg["dtype"],
+                  "scaler_enabled": scaler,
+                  "tensor_core_aligned_dim": cfg["align"],
+              }
           ```
-          Expected output (approximate for ResNet-50):
-          - Model loaded: ~0.10 GB
-          - After inference with batch 32: ~0.85 GB peak
+          BF16 keeps the same 8-bit exponent as FP32, so values rarely
+          underflow, making GradScaler unnecessary. FP16 with its 5-bit
+          exponent often sees gradient underflow and needs scaling. Tensor
+          Core efficiency requires dimensions aligned to 8 (FP16/BF16)
+          or 16 (INT8).
+
+      # ---- Exercise 5: Coding — GPU Memory Report ----
+      - id: "aiml-gpu-code3"
+        title: "GPU Memory Estimator"
+        description: "Write a function `estimate_model_memory(param_count, precision, batch_size, seq_len, hidden_dim, num_layers)` that estimates total GPU memory in GB needed for training. Account for: parameters, gradients, Adam optimizer states (momentum + variance), and activations (approximated as `2 * batch_size * seq_len * hidden_dim * num_layers * bytes_per_param`). Return a dictionary with keys: 'params_gb', 'gradients_gb', 'optimizer_gb', 'activations_gb', 'total_gb'."
+        exercise_type: "coding"
+        difficulty: 4
+        starter_code: |
+          def estimate_model_memory(param_count, precision="bf16",
+                                    batch_size=8, seq_len=2048,
+                                    hidden_dim=4096, num_layers=32):
+              """
+              Estimate GPU memory for training a transformer model.
+
+              Args:
+                  param_count: Number of parameters (e.g., 7_000_000_000).
+                  precision: "fp32", "fp16", or "bf16".
+                  batch_size: Training batch size.
+                  seq_len: Sequence length.
+                  hidden_dim: Hidden dimension size.
+                  num_layers: Number of transformer layers.
+
+              Returns:
+                  Dict with memory estimates in GB.
+              """
+              # TODO: implement memory estimation
+              pass
+        test_cases:
+          - input: |
+              r = estimate_model_memory(1_000_000_000, "fp32", 1, 1, 1, 1)
+              print(f"{r['params_gb']:.2f}")
+            expected_output: "3.73"
+          - input: |
+              r = estimate_model_memory(1_000_000_000, "bf16", 1, 1, 1, 1)
+              print(f"{r['params_gb']:.2f}")
+            expected_output: "1.86"
+          - input: |
+              r = estimate_model_memory(1_000_000_000, "fp32", 1, 1, 1, 1)
+              print(f"{r['optimizer_gb']:.2f}")
+            expected_output: "7.45"
+          - input: |
+              r = estimate_model_memory(1_000_000_000, "bf16", 1, 1, 1, 1)
+              print(f"{r['optimizer_gb']:.2f}")
+            expected_output: "7.45"
+        hints:
+          - "FP32 = 4 bytes, FP16/BF16 = 2 bytes per parameter."
+          - "Gradients are the same size as parameters."
+          - "Adam stores momentum and variance in FP32 regardless of model precision: 2 × param_count × 4 bytes."
+          - "1 GB = 1024^3 bytes."
+        solution: |
+          ```python
+          def estimate_model_memory(param_count, precision="bf16",
+                                    batch_size=8, seq_len=2048,
+                                    hidden_dim=4096, num_layers=32):
+              bytes_per_param = 4 if precision == "fp32" else 2
+              GB = 1024 ** 3
+
+              params_bytes = param_count * bytes_per_param
+              grad_bytes = param_count * bytes_per_param
+              # Adam always uses FP32 for momentum and variance
+              optimizer_bytes = param_count * 4 * 2
+              # Rough activation estimate
+              activation_bytes = (2 * batch_size * seq_len *
+                                  hidden_dim * num_layers * bytes_per_param)
+
+              return {
+                  "params_gb": round(params_bytes / GB, 2),
+                  "gradients_gb": round(grad_bytes / GB, 2),
+                  "optimizer_gb": round(optimizer_bytes / GB, 2),
+                  "activations_gb": round(activation_bytes / GB, 2),
+                  "total_gb": round((params_bytes + grad_bytes +
+                                     optimizer_bytes + activation_bytes) / GB, 2),
+              }
+          ```
+          For a 7B model in BF16: params=13 GB, grads=13 GB, optimizer=52 GB,
+          activations vary by batch/seq. Total ≈78+ GB — this is why a single
+          80 GB A100 struggles with 7B models and motivates distributed training.
 
   # ---------------------------------------------------------------------------
   # LESSON 2 — ML Framework Deployment
@@ -240,13 +787,15 @@ lessons:
     order: 2
     objectives:
       - "Install PyTorch and TensorFlow on HPC systems with GPU support"
+      - "Build multi-stage Docker images for ML workloads"
+      - "Deploy models with Triton Inference Server and TorchServe"
+      - "Export and optimize models with ONNX Runtime"
       - "Configure NCCL for multi-GPU and multi-node communication"
-      - "Manage Python environments with conda and pip on shared clusters"
       - "Use NVIDIA NGC containers for pre-built ML environments"
     content_md: |
       # ML Framework Deployment
 
-      ## Installing PyTorch on HPC
+      ## 1. Installing PyTorch on HPC
 
       HPC systems require careful attention to CUDA driver compatibility,
       interconnect libraries, and shared filesystem performance. There are
@@ -316,7 +865,138 @@ lessons:
       conda create -p /scratch/$USER/envs/pytorch python=3.11
       ```
 
-      ## NCCL Configuration
+      ## 2. Multi-Stage Docker Builds for ML
+
+      Production ML containers should be lean. Multi-stage builds separate
+      the build environment from the runtime, dramatically reducing image size:
+
+      ```dockerfile
+      # ============ Stage 1: Builder ============
+      FROM nvcr.io/nvidia/pytorch:24.01-py3 AS builder
+
+      WORKDIR /build
+      COPY requirements.txt .
+      RUN pip install --prefix=/install --no-cache-dir -r requirements.txt
+
+      COPY src/ ./src/
+      # Pre-compile Python files for faster startup
+      RUN python -m compileall src/
+
+      # ============ Stage 2: Runtime ============
+      FROM nvcr.io/nvidia/cuda:12.2.2-runtime-ubuntu22.04 AS runtime
+
+      # Install minimal Python runtime
+      RUN apt-get update && apt-get install -y --no-install-recommends \
+          python3.11 python3.11-venv libpython3.11 && \
+          rm -rf /var/lib/apt/lists/*
+
+      # Copy only what we need from builder
+      COPY --from=builder /install /usr/local
+      COPY --from=builder /build/src /app/src
+
+      WORKDIR /app
+      ENV PYTHONUNBUFFERED=1
+      ENV CUDA_VISIBLE_DEVICES=0
+
+      EXPOSE 8080
+      CMD ["python3.11", "src/serve.py"]
+      ```
+
+      ```
+      Image Size Comparison:
+      ┌──────────────────────────────┬──────────┐
+      │ Approach                     │ Size     │
+      ├──────────────────────────────┼──────────┤
+      │ NGC PyTorch (full)           │ ~21 GB   │
+      │ Single-stage custom          │ ~15 GB   │
+      │ Multi-stage (runtime only)   │ ~4.5 GB  │
+      │ Distroless + compiled        │ ~2.8 GB  │
+      └──────────────────────────────┴──────────┘
+      ```
+
+      ### Docker Layer Caching Strategy
+
+      Order your Dockerfile layers from least to most frequently changing:
+
+      ```dockerfile
+      # Layer 1: Base image (rarely changes)
+      FROM nvcr.io/nvidia/cuda:12.2.2-runtime-ubuntu22.04
+
+      # Layer 2: System packages (changes quarterly)
+      RUN apt-get update && apt-get install -y python3.11
+
+      # Layer 3: Python dependencies (changes weekly)
+      COPY requirements.txt .
+      RUN pip install -r requirements.txt
+
+      # Layer 4: Application code (changes every commit)
+      COPY src/ /app/src/
+
+      # Layer 5: Model weights (changes per experiment)
+      COPY models/ /app/models/
+      ```
+
+      ```
+      Docker Layer Cache Flow:
+      ┌──────────────┐
+      │  Base Image   │  ← Cached (almost always)
+      ├──────────────┤
+      │  System Pkgs  │  ← Cached (months)
+      ├──────────────┤
+      │  pip install   │  ← Cached until requirements.txt changes
+      ├──────────────┤
+      │  App Code      │  ← Rebuilt on code change
+      ├──────────────┤
+      │  Model Weights │  ← Rebuilt on model change
+      └──────────────┘
+      Each layer invalidation causes ALL subsequent layers to rebuild.
+      ```
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"docker"}'}
+
+      ## 3. CUDA Pinning and Device Management
+
+      Pinned (page-locked) memory enables faster CPU→GPU DMA transfers:
+
+      ```python
+      import torch
+      from torch.utils.data import DataLoader
+
+      # Enable pinned memory for DataLoader
+      loader = DataLoader(
+          dataset,
+          batch_size=64,
+          num_workers=8,
+          pin_memory=True,          # Allocate in page-locked memory
+          persistent_workers=True,  # Keep workers alive between epochs
+          prefetch_factor=3,        # Pre-load 3 batches per worker
+      )
+
+      # Non-blocking transfer overlaps copy with compute
+      for batch in loader:
+          inputs = batch['input'].to('cuda', non_blocking=True)
+          labels = batch['label'].to('cuda', non_blocking=True)
+          output = model(inputs)
+      ```
+
+      **Multi-GPU device management:**
+
+      ```python
+      import os
+
+      # Restrict visible GPUs (do this BEFORE importing torch)
+      os.environ["CUDA_VISIBLE_DEVICES"] = "0,2,5"
+
+      import torch
+      # Now torch sees 3 GPUs as devices 0, 1, 2
+      print(torch.cuda.device_count())  # 3
+
+      # Explicit device placement
+      device = torch.device("cuda:0")
+      model = MyModel().to(device)
+      ```
+
+      ## 4. NCCL Configuration
 
       NCCL (NVIDIA Collective Communications Library) handles all-reduce,
       broadcast, and other collective operations for multi-GPU training.
@@ -339,24 +1019,172 @@ lessons:
       export NCCL_IB_HCA=mlx5
       export NCCL_SOCKET_IFNAME=eno1
       export NCCL_P2P_LEVEL=NVL
-
-      srun torchrun \
-        --nproc_per_node=8 \
-        --nnodes=$SLURM_NNODES \
-        --node_rank=$SLURM_NODEID \
-        --master_addr=$(scontrol show hostname $SLURM_JOB_NODELIST | head -n1) \
-        --master_port=29500 \
-        train.py
       ```
 
-      ## Environment Management Best Practices
+      ## 5. Triton Inference Server
+
+      NVIDIA Triton Inference Server supports multiple frameworks and
+      provides batching, model versioning, and GPU scheduling:
+
+      ```
+      Triton Architecture:
+      ┌───────────────────────────────────────────┐
+      │           Triton Inference Server          │
+      │                                            │
+      │  ┌──────────┐  ┌──────────┐  ┌─────────┐ │
+      │  │ PyTorch  │  │TensorRT  │  │  ONNX   │ │
+      │  │ Backend  │  │ Backend  │  │ Runtime │ │
+      │  └────┬─────┘  └────┬─────┘  └────┬────┘ │
+      │       └──────────────┼─────────────┘      │
+      │                      ▼                     │
+      │            ┌─────────────────┐             │
+      │            │ Dynamic Batcher │             │
+      │            │ (groups requests│             │
+      │            │  for efficiency)│             │
+      │            └────────┬────────┘             │
+      │                     ▼                      │
+      │            ┌─────────────────┐             │
+      │            │  GPU Scheduler  │             │
+      │            │ (multi-instance │             │
+      │            │  multi-model)   │             │
+      │            └─────────────────┘             │
+      └───────────────────────────────────────────┘
+
+      Model Repository Layout:
+      models/
+      ├── bert_classifier/
+      │   ├── config.pbtxt
+      │   ├── 1/
+      │   │   └── model.pt
+      │   └── 2/
+      │       └── model.pt
+      └── resnet50/
+          ├── config.pbtxt
+          └── 1/
+              └── model.onnx
+      ```
+
+      Triton model configuration (`config.pbtxt`):
+
+      ```protobuf
+      name: "bert_classifier"
+      platform: "pytorch_libtorch"
+      max_batch_size: 64
+      input [
+        {
+          name: "input_ids"
+          data_type: TYPE_INT64
+          dims: [ 512 ]
+        },
+        {
+          name: "attention_mask"
+          data_type: TYPE_INT64
+          dims: [ 512 ]
+        }
+      ]
+      output [
+        {
+          name: "logits"
+          data_type: TYPE_FP32
+          dims: [ 2 ]
+        }
+      ]
+      dynamic_batching {
+        preferred_batch_size: [ 8, 16, 32 ]
+        max_queue_delay_microseconds: 100
+      }
+      instance_group [
+        {
+          count: 2
+          kind: KIND_GPU
+          gpus: [ 0, 1 ]
+        }
+      ]
+      ```
+
+      ## 6. TorchServe
+
+      TorchServe is PyTorch's native model serving solution:
+
+      ```bash
+      # Package model into a .mar archive
+      torch-model-archiver \
+        --model-name bert_classifier \
+        --version 1.0 \
+        --serialized-file model.pt \
+        --handler custom_handler.py \
+        --extra-files "config.json,vocab.txt" \
+        --export-path model_store/
+
+      # Start TorchServe
+      torchserve --start \
+        --model-store model_store \
+        --models bert=bert_classifier.mar \
+        --ncs --ts-config config.properties
+      ```
+
+      ## 7. ONNX Export and Optimization
+
+      ONNX (Open Neural Network Exchange) enables framework-agnostic
+      model deployment and hardware-specific optimizations:
+
+      ```python
+      import torch
+      import onnx
+      import onnxruntime as ort
+
+      # Export PyTorch model to ONNX
+      model.eval()
+      dummy_input = torch.randn(1, 3, 224, 224, device='cuda')
+      torch.onnx.export(
+          model, dummy_input, "model.onnx",
+          input_names=["image"],
+          output_names=["logits"],
+          dynamic_axes={"image": {0: "batch"}, "logits": {0: "batch"}},
+          opset_version=17,
+      )
+
+      # Optimize with ONNX Runtime
+      sess_options = ort.SessionOptions()
+      sess_options.graph_optimization_level = \
+          ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+      sess_options.optimized_model_filepath = "model_optimized.onnx"
+
+      session = ort.InferenceSession(
+          "model.onnx",
+          sess_options,
+          providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+      )
+
+      # Inference
+      import numpy as np
+      result = session.run(
+          None,
+          {"image": np.random.randn(1, 3, 224, 224).astype(np.float32)},
+      )
+      ```
+
+      ```
+      Model Optimization Pipeline:
+      ┌──────────┐     ┌──────────┐     ┌───────────┐     ┌──────────┐
+      │ PyTorch  │────→│   ONNX   │────→│  TensorRT │────→│ Deployed │
+      │  Model   │     │  Export  │     │  Engine   │     │  Model   │
+      └──────────┘     └──────────┘     └───────────┘     └──────────┘
+            │                │                │                │
+        FP32 ~100ms     FP32 ~70ms     FP16/INT8 ~15ms   Optimized
+        (no opt)        (graph opt)     (kernel fusion)   (production)
+      ```
+
+      :::interactive{component="PipelineBuilder" config='{"preset":"ci-cd"}'}
+
+      ## 8. Environment Management Best Practices
 
       ```
       Approach         Pros                         Cons
       ─────────────────────────────────────────────────────────────
       Conda            Easy, wide package support   Slow on shared FS
       pip + venv       Lightweight, fast             Missing system libs
-      NGC Container    Optimized, reproducible      Large image size
+      NGC Container    Optimized, reproducible      Large image size (~20GB)
       Spack            HPC-native, builds from src  Complex configuration
       ```
 
@@ -364,7 +1192,10 @@ lessons:
       because they guarantee a tested, optimized software stack. For
       development, use conda with `--prefix` on a fast filesystem.
 
+      :::interactive{component="DockerLayerVisualizer"}
+
     exercises:
+      # ---- Exercise 1: Quiz — NCCL Configuration ----
       - id: "aiml-framework-q1"
         title: "NCCL Configuration"
         description: "Which NCCL environment variable should be set to 0 to ensure InfiniBand is used for multi-node GPU communication?"
@@ -381,90 +1212,218 @@ lessons:
           - "Setting it to 0 means 'do not disable', effectively enabling InfiniBand."
         solution: "NCCL_IB_DISABLE=0 ensures InfiniBand is NOT disabled, allowing NCCL to use IB for high-bandwidth, low-latency inter-node communication. InfiniBand provides ~200-400 Gb/s per port, which is crucial for distributed training where gradient synchronization is the bottleneck. Setting it to 1 would force NCCL to fall back to TCP sockets, which is significantly slower."
 
+      # ---- Exercise 2: Quiz — Docker Layer Caching ----
+      - id: "aiml-framework-q2"
+        title: "Docker Layer Cache Strategy"
+        description: "In a multi-stage Docker build for an ML application, which ordering of Dockerfile layers maximizes cache hit rate?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "COPY code → COPY requirements → pip install → COPY models"
+          - "COPY requirements → pip install → COPY code → COPY models"
+          - "COPY models → COPY code → COPY requirements → pip install"
+          - "pip install → COPY requirements → COPY models → COPY code"
+        correct_answer: "COPY requirements → pip install → COPY code → COPY models"
+        hints:
+          - "Docker layer cache is invalidated when a layer changes, and ALL subsequent layers must be rebuilt."
+          - "Order layers from least-frequently-changing to most-frequently-changing."
+          - "requirements.txt changes less often than source code, which changes less often than models."
+        solution: "The correct order is: COPY requirements → pip install → COPY code → COPY models. Docker's layer cache is invalidated sequentially: when a layer changes, all subsequent layers are rebuilt. By placing requirements.txt (which changes infrequently) before source code (which changes every commit), we avoid re-running pip install on every code change, saving minutes of build time. Model weights change per experiment, so they go last."
+
+      # ---- Exercise 3: Coding — PyTorch GPU Verification ----
       - id: "aiml-framework-code1"
         title: "PyTorch GPU Verification Script"
-        description: "Write a comprehensive Python script that verifies a PyTorch installation is correctly configured for GPU training. It should check: CUDA availability, CUDA version, cuDNN version, GPU count, each GPU's name and memory, NCCL availability, and run a small tensor operation on GPU to confirm functionality."
+        description: "Write a function `verify_gpu_setup()` that returns a dictionary with GPU setup information: 'cuda_available' (bool), 'cuda_version' (str or 'N/A'), 'gpu_count' (int), 'gpu_names' (list of strings), and 'nccl_available' (bool). When CUDA is not available, return appropriate defaults."
         exercise_type: "coding"
         difficulty: 2
+        starter_code: |
+          def verify_gpu_setup():
+              """
+              Verify PyTorch GPU setup and return a status dictionary.
+
+              Returns:
+                  dict with keys: cuda_available, cuda_version, gpu_count,
+                  gpu_names, nccl_available
+              """
+              # TODO: check CUDA, enumerate GPUs, check NCCL
+              pass
+        test_cases:
+          - input: |
+              # Mock test for CPU-only environment
+              import unittest.mock as mock
+              import torch
+              with mock.patch.object(torch.cuda, 'is_available', return_value=False):
+                  result = verify_gpu_setup()
+              print(result['cuda_available'], result['gpu_count'])
+            expected_output: "False 0"
+          - input: |
+              result = verify_gpu_setup()
+              print(type(result['gpu_names']))
+            expected_output: "<class 'list'>"
+          - input: |
+              result = verify_gpu_setup()
+              print(type(result['cuda_available']))
+            expected_output: "<class 'bool'>"
         hints:
-          - "Use torch.cuda.get_device_properties(i) for detailed GPU info."
+          - "Use torch.cuda.is_available() to check CUDA."
+          - "torch.version.cuda returns the CUDA version string."
+          - "torch.cuda.get_device_name(i) gives the GPU name for device i."
           - "torch.distributed.is_nccl_available() checks NCCL support."
-          - "Test with a small matmul on GPU to verify compute works."
         solution: |
           ```python
           import torch
-          import sys
 
-          print(f"Python: {sys.version}")
-          print(f"PyTorch: {torch.__version__}")
-          print(f"CUDA available: {torch.cuda.is_available()}")
-
-          if torch.cuda.is_available():
-              print(f"CUDA version: {torch.version.cuda}")
-              print(f"cuDNN version: {torch.backends.cudnn.version()}")
-              print(f"GPU count: {torch.cuda.device_count()}")
-
-              for i in range(torch.cuda.device_count()):
-                  props = torch.cuda.get_device_properties(i)
-                  mem_gb = props.total_memory / 1024**3
-                  print(f"  GPU {i}: {props.name} ({mem_gb:.1f} GB)")
-                  print(f"    Compute capability: {props.major}.{props.minor}")
-                  print(f"    SMs: {props.multi_processor_count}")
-
-              print(f"NCCL available: {torch.distributed.is_nccl_available()}")
-
-              # Functional test
-              a = torch.randn(1000, 1000, device='cuda')
-              b = torch.randn(1000, 1000, device='cuda')
-              c = torch.matmul(a, b)
-              print(f"GPU compute test: PASSED (result shape: {c.shape})")
-          else:
-              print("WARNING: No GPU available!")
+          def verify_gpu_setup():
+              cuda_ok = torch.cuda.is_available()
+              if cuda_ok:
+                  return {
+                      "cuda_available": True,
+                      "cuda_version": torch.version.cuda or "N/A",
+                      "gpu_count": torch.cuda.device_count(),
+                      "gpu_names": [
+                          torch.cuda.get_device_name(i)
+                          for i in range(torch.cuda.device_count())
+                      ],
+                      "nccl_available": torch.distributed.is_nccl_available(),
+                  }
+              return {
+                  "cuda_available": False,
+                  "cuda_version": "N/A",
+                  "gpu_count": 0,
+                  "gpu_names": [],
+                  "nccl_available": False,
+              }
           ```
 
-      - id: "aiml-framework-lab1"
-        title: "HPC Environment Setup Script"
-        description: "Write a bash script for an HPC cluster that: (1) loads the required CUDA and cuDNN modules, (2) creates a conda environment on the scratch filesystem, (3) installs PyTorch with CUDA 12.1 support, (4) installs common ML libraries (transformers, datasets, accelerate, wandb), and (5) verifies the installation by running the GPU check."
-        exercise_type: "lab"
+      # ---- Exercise 4: Coding — Dockerfile Generator ----
+      - id: "aiml-framework-code2"
+        title: "Multi-Stage Dockerfile Generator"
+        description: "Write a function `generate_ml_dockerfile(base_image, python_version, requirements_file, app_entry)` that returns a string containing a valid multi-stage Dockerfile. Stage 1 (builder) installs dependencies. Stage 2 (runtime) copies only the installed packages and application code."
+        exercise_type: "coding"
         difficulty: 3
+        starter_code: |
+          def generate_ml_dockerfile(base_image="nvcr.io/nvidia/cuda:12.2.2-runtime-ubuntu22.04",
+                                     python_version="3.11",
+                                     requirements_file="requirements.txt",
+                                     app_entry="src/serve.py"):
+              """
+              Generate a multi-stage Dockerfile for ML deployment.
+
+              Returns:
+                  String containing the Dockerfile content.
+              """
+              # TODO: build the Dockerfile string
+              pass
+        test_cases:
+          - input: |
+              df = generate_ml_dockerfile()
+              print("FROM" in df and "AS builder" in df)
+            expected_output: "True"
+          - input: |
+              df = generate_ml_dockerfile()
+              print("COPY --from=builder" in df)
+            expected_output: "True"
+          - input: |
+              df = generate_ml_dockerfile(app_entry="app/main.py")
+              print("app/main.py" in df)
+            expected_output: "True"
+          - input: |
+              df = generate_ml_dockerfile()
+              lines = [l.strip() for l in df.strip().split('\n') if l.strip()]
+              from_count = sum(1 for l in lines if l.startswith('FROM'))
+              print(from_count >= 2)
+            expected_output: "True"
         hints:
-          - "Use conda create --prefix for the scratch filesystem path."
-          - "Use pip with --index-url for the PyTorch CUDA wheels."
-          - "Run the verification as the final step."
+          - "Use a Python f-string or string concatenation to build the Dockerfile."
+          - "Stage 1 should use a full build image; stage 2 uses a slim runtime."
+          - "COPY --from=builder copies artifacts from the builder stage."
+          - "Include WORKDIR, ENV, and CMD directives in the runtime stage."
         solution: |
-          ```bash
-          #!/bin/bash
-          set -euo pipefail
+          ```python
+          def generate_ml_dockerfile(base_image="nvcr.io/nvidia/cuda:12.2.2-runtime-ubuntu22.04",
+                                     python_version="3.11",
+                                     requirements_file="requirements.txt",
+                                     app_entry="src/serve.py"):
+              return f"""# Stage 1: Builder
+          FROM {base_image} AS builder
+          RUN apt-get update && apt-get install -y python{python_version} python3-pip
+          WORKDIR /build
+          COPY {requirements_file} .
+          RUN pip install --prefix=/install --no-cache-dir -r {requirements_file}
+          COPY src/ ./src/
 
-          echo "=== Loading modules ==="
-          module load cuda/12.2 cudnn/8.9 anaconda3
+          # Stage 2: Runtime
+          FROM {base_image}
+          RUN apt-get update && apt-get install -y --no-install-recommends \\
+              python{python_version} libpython{python_version} && \\
+              rm -rf /var/lib/apt/lists/*
+          COPY --from=builder /install /usr/local
+          COPY --from=builder /build/src /app/src
+          WORKDIR /app
+          ENV PYTHONUNBUFFERED=1
+          EXPOSE 8080
+          CMD ["python{python_version}", "{app_entry}"]
+          """
+          ```
 
-          ENV_PATH="/scratch/$USER/envs/ml-training"
+      # ---- Exercise 5: Coding — ONNX Export Helper ----
+      - id: "aiml-framework-code3"
+        title: "ONNX Export Configuration"
+        description: "Write a function `build_onnx_export_config(model_name, input_shapes, dynamic_axes_map)` that returns a dictionary with ONNX export parameters: 'opset_version' (17), 'input_names', 'output_names', 'dynamic_axes', and 'do_constant_folding' (True). The input_shapes should be a dict like {'image': [1,3,224,224]}, and dynamic_axes_map should be like {'image': {0: 'batch'}, 'logits': {0: 'batch'}}."
+        exercise_type: "coding"
+        difficulty: 3
+        starter_code: |
+          def build_onnx_export_config(model_name,
+                                       input_shapes,
+                                       dynamic_axes_map=None):
+              """
+              Build ONNX export configuration.
 
-          echo "=== Creating conda environment ==="
-          conda create -y --prefix "$ENV_PATH" python=3.11
-          conda activate "$ENV_PATH"
+              Args:
+                  model_name: Name for the exported model.
+                  input_shapes: Dict of input_name -> shape list.
+                  dynamic_axes_map: Optional dict of name -> {dim: label}.
 
-          echo "=== Installing PyTorch ==="
-          pip install torch torchvision torchaudio \
-            --index-url https://download.pytorch.org/whl/cu121
-
-          echo "=== Installing ML libraries ==="
-          pip install transformers datasets accelerate wandb \
-            deepspeed scipy sentencepiece protobuf
-
-          echo "=== Verifying installation ==="
-          python -c "
-          import torch
-          assert torch.cuda.is_available(), 'CUDA not available!'
-          print(f'PyTorch {torch.__version__} with CUDA {torch.version.cuda}')
-          print(f'GPUs: {torch.cuda.device_count()}')
-          x = torch.randn(100, 100, device='cuda')
-          print('GPU compute: OK')
-          "
-
-          echo "=== Setup complete ==="
-          echo "Activate with: conda activate $ENV_PATH"
+              Returns:
+                  Dict with ONNX export parameters.
+              """
+              # TODO: build config dict
+              pass
+        test_cases:
+          - input: |
+              cfg = build_onnx_export_config("resnet", {"image": [1,3,224,224]})
+              print(cfg['opset_version'])
+            expected_output: "17"
+          - input: |
+              cfg = build_onnx_export_config("resnet", {"image": [1,3,224,224]})
+              print(cfg['input_names'])
+            expected_output: "['image']"
+          - input: |
+              cfg = build_onnx_export_config("bert", {"ids": [1,512], "mask": [1,512]})
+              print(sorted(cfg['input_names']))
+            expected_output: "['ids', 'mask']"
+          - input: |
+              cfg = build_onnx_export_config("resnet", {"image": [1,3,224,224]}, {"image": {0: "batch"}})
+              print(cfg['dynamic_axes'])
+            expected_output: "{'image': {0: 'batch'}}"
+        hints:
+          - "input_names come from the keys of input_shapes."
+          - "output_names default to ['output'] if not specified."
+          - "dynamic_axes should default to an empty dict if None."
+        solution: |
+          ```python
+          def build_onnx_export_config(model_name,
+                                       input_shapes,
+                                       dynamic_axes_map=None):
+              return {
+                  "model_name": model_name,
+                  "opset_version": 17,
+                  "input_names": list(input_shapes.keys()),
+                  "output_names": ["output"],
+                  "dynamic_axes": dynamic_axes_map or {},
+                  "do_constant_folding": True,
+                  "input_shapes": input_shapes,
+              }
           ```
 
   # ---------------------------------------------------------------------------
@@ -478,37 +1437,67 @@ lessons:
       - "Implement distributed data parallel training with PyTorch DDP"
       - "Configure DeepSpeed ZeRO stages for memory-efficient training"
       - "Use PyTorch FSDP for large model training"
+      - "Understand NCCL collectives and gradient accumulation"
+      - "Write multi-node SLURM launch scripts with torchrun"
     content_md: |
       # Distributed Training
 
-      ## Why Distribute?
+      ## 1. Why Distribute?
 
       Training large models on a single GPU is often impossible or
       impractically slow. GPT-3 (175B parameters) requires ~350 GB in FP16
-      — far exceeding any single GPU's memory. Distributed training splits
-      the work across multiple GPUs and nodes.
+      — far exceeding any single GPU's memory. Even a 7B-parameter model
+      needs ~78 GB for training (parameters + gradients + optimizer states +
+      activations), barely fitting on a single 80 GB A100.
 
-      ## Parallelism Strategies
+      Distributed training splits the work across multiple GPUs and nodes
+      to overcome memory limits and reduce wall-clock time.
+
+      ## 2. Parallelism Strategies
 
       ```
-      ┌─────────────────────────────────────────────────────────┐
-      │                  Parallelism Strategies                 │
-      ├──────────────┬──────────────────┬───────────────────────┤
-      │  Data         │  Model           │  Pipeline             │
-      │  Parallelism  │  Parallelism     │  Parallelism          │
-      ├──────────────┼──────────────────┼───────────────────────┤
-      │ Same model    │ Model split      │ Model split into      │
-      │ on each GPU,  │ across GPUs      │ sequential stages     │
-      │ different data│ (tensor/layer)   │ with micro-batches    │
-      ├──────────────┼──────────────────┼───────────────────────┤
-      │ GPU0: batch0  │ GPU0: layers 0-11│ GPU0: Stage1 → →     │
-      │ GPU1: batch1  │ GPU1: layers12-23│ GPU1:    Stage2 → →  │
-      │ GPU2: batch2  │ GPU2: layers24-35│ GPU2:       Stage3→→ │
-      │ GPU3: batch3  │ GPU3: layers36-47│                       │
-      └──────────────┴──────────────────┴───────────────────────┘
+      ┌──────────────────────────────────────────────────────────────────┐
+      │                     Parallelism Strategies                       │
+      ├───────────────────┬────────────────────┬────────────────────────┤
+      │  Data Parallelism  │  Tensor Parallelism │  Pipeline Parallelism │
+      ├───────────────────┼────────────────────┼────────────────────────┤
+      │ Same model on     │ Single layer split  │ Model split into      │
+      │ each GPU,         │ across GPUs         │ sequential stages     │
+      │ different data    │ (matrix columns)    │ with micro-batches    │
+      ├───────────────────┼────────────────────┼────────────────────────┤
+      │ GPU0: batch 0     │ GPU0: col 0-2047   │ GPU0: ──[stg1]──      │
+      │ GPU1: batch 1     │ GPU1: col 2048-4095│ GPU1:    ──[stg2]──   │
+      │ GPU2: batch 2     │ Both GPUs compute  │ GPU2:       ──[stg3]──│
+      │ GPU3: batch 3     │ partial matmuls    │ Micro-batches overlap │
+      ├───────────────────┼────────────────────┼────────────────────────┤
+      │ Sync: all-reduce  │ Sync: all-reduce   │ Sync: pipeline flush  │
+      │ on gradients      │ on activations     │ at stage boundaries   │
+      └───────────────────┴────────────────────┴────────────────────────┘
       ```
 
-      ## Data Parallelism with PyTorch DDP
+      ### 3D Parallelism (Megatron-DeepSpeed)
+
+      For the largest models (100B+), all three are combined:
+
+      ```
+      3D Parallelism:  DP × TP × PP
+      Example: 64 GPUs = 4 (DP) × 4 (TP) × 4 (PP)
+
+      ┌─── DP Group 0 ───────────────────────────────────────┐
+      │  TP Group 0          TP Group 1                       │
+      │  ┌────┬────┐        ┌────┬────┐                      │
+      │  │GPU0│GPU1│──PP──→│GPU4│GPU5│──PP──→ ...           │
+      │  │GPU2│GPU3│──PP──→│GPU6│GPU7│──PP──→ ...           │
+      │  └────┴────┘        └────┴────┘                      │
+      └──────────────────────────────────────────────────────┘
+      ┌─── DP Group 1 ──── (same model, different data) ────┐
+      │  ...                                                  │
+      └──────────────────────────────────────────────────────┘
+      ```
+
+      :::interactive{component="GPUMemoryVisualizer"}
+
+      ## 3. Data Parallelism with PyTorch DDP
 
       **DistributedDataParallel (DDP)** replicates the model on each GPU
       and synchronizes gradients via all-reduce after each backward pass:
@@ -520,7 +1509,12 @@ lessons:
       from torch.utils.data.distributed import DistributedSampler
 
       def setup(rank, world_size):
-          dist.init_process_group("nccl", rank=rank, world_size=world_size)
+          """Initialize the distributed process group."""
+          dist.init_process_group(
+              backend="nccl",       # GPU-optimized backend
+              rank=rank,
+              world_size=world_size
+          )
           torch.cuda.set_device(rank)
 
       def train(rank, world_size):
@@ -529,15 +1523,20 @@ lessons:
           model = MyModel().to(rank)
           model = DDP(model, device_ids=[rank])
 
-          sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank)
-          dataloader = DataLoader(dataset, batch_size=64, sampler=sampler)
+          sampler = DistributedSampler(
+              dataset, num_replicas=world_size, rank=rank
+          )
+          dataloader = DataLoader(
+              dataset, batch_size=64, sampler=sampler,
+              num_workers=4, pin_memory=True
+          )
 
           optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
           for epoch in range(100):
               sampler.set_epoch(epoch)  # Shuffle differently each epoch
               for batch in dataloader:
-                  optimizer.zero_grad()
+                  optimizer.zero_grad(set_to_none=True)
                   loss = model(batch.to(rank)).loss
                   loss.backward()        # Gradients all-reduced automatically
                   optimizer.step()
@@ -548,22 +1547,95 @@ lessons:
       Launch with `torchrun`:
 
       ```bash
-      torchrun --nproc_per_node=4 --nnodes=2 \
-        --node_rank=0 --master_addr=node01 --master_port=29500 \
+      # Single-node, 4 GPUs
+      torchrun --nproc_per_node=4 train.py
+
+      # Multi-node: run on each node
+      torchrun --nproc_per_node=8 --nnodes=4 \
+        --node_rank=$SLURM_NODEID \
+        --master_addr=$(scontrol show hostname $SLURM_JOB_NODELIST | head -n1) \
+        --master_port=29500 \
         train.py
       ```
 
-      ## DeepSpeed ZeRO
+      ### DDP Communication Under the Hood
+
+      ```
+      Forward Pass:
+        Each GPU computes forward on its local mini-batch.
+        No communication needed.
+
+      Backward Pass:
+        ┌──────────────────────────────────────────────────┐
+        │   GPU 0          GPU 1          GPU 2           │
+        │ ∇L₀(layer N)  ∇L₁(layer N)  ∇L₂(layer N)     │
+        │     │              │              │              │
+        │     └──── All-Reduce (NCCL Ring) ─┘              │
+        │           avg(∇L₀, ∇L₁, ∇L₂)                   │
+        │     ┌──────────────┼──────────────┐              │
+        │ ∇L(layer N)   ∇L(layer N)   ∇L(layer N)        │
+        │                                                  │
+        │ Then repeat for layer N-1, N-2, ...              │
+        │ (overlapped with backward computation)           │
+        └──────────────────────────────────────────────────┘
+      ```
+
+      DDP **overlaps** the all-reduce of earlier-computed gradients with
+      the backward computation of later layers, hiding communication latency.
+
+      ## 4. Gradient Accumulation
+
+      When GPU memory can't fit your desired batch size, accumulate
+      gradients over multiple forward passes before stepping:
+
+      ```python
+      accumulation_steps = 4
+      optimizer.zero_grad(set_to_none=True)
+
+      for i, batch in enumerate(dataloader):
+          with model.no_sync() if (i + 1) % accumulation_steps != 0 else nullcontext():
+              loss = model(batch.to(rank)).loss
+              loss = loss / accumulation_steps
+              loss.backward()
+
+          if (i + 1) % accumulation_steps == 0:
+              optimizer.step()
+              optimizer.zero_grad(set_to_none=True)
+      ```
+
+      The `model.no_sync()` context manager skips the all-reduce on
+      intermediate accumulation steps, synchronizing only when we're
+      ready to step. This reduces communication by `accumulation_steps×`.
+
+      **Effective batch size** = `micro_batch × num_gpus × accumulation_steps`
+
+      Example: micro_batch=2, 8 GPUs, accum=4 → effective batch = 64
+
+      ## 5. DeepSpeed ZeRO
 
       DeepSpeed's **ZeRO (Zero Redundancy Optimizer)** partitions optimizer
       states, gradients, and parameters across GPUs to dramatically reduce
       memory per GPU:
 
-      | ZeRO Stage | What's Partitioned         | Memory Savings |
-      |------------|----------------------------|----------------|
-      | Stage 1    | Optimizer states           | 4×             |
-      | Stage 2    | + Gradients                | 8×             |
-      | Stage 3    | + Parameters               | Linear w/ GPUs |
+      ```
+      Memory per GPU (7B model, FP16, 8 GPUs):
+
+                         Standard DDP    ZeRO-1    ZeRO-2    ZeRO-3
+      Parameters         14 GB           14 GB     14 GB     1.75 GB
+      Gradients          14 GB           14 GB     1.75 GB   1.75 GB
+      Optimizer States   56 GB           7 GB      7 GB      7 GB
+      ─────────────────────────────────────────────────────────────
+      Total              84 GB           35 GB     22.75 GB  10.5 GB
+      Fits on 80GB A100? NO              YES       YES       YES
+      ```
+
+      | ZeRO Stage | What's Partitioned          | Memory Savings |
+      |------------|-----------------------------|----------------|
+      | Stage 1    | Optimizer states            | 4×             |
+      | Stage 2    | + Gradients                 | 8×             |
+      | Stage 3    | + Parameters                | Linear w/ GPUs |
+
+      :::interactive{component="CUDAVisualizer" config='{"preset":"memory-hierarchy"}'}
 
       DeepSpeed configuration (`ds_config.json`):
 
@@ -574,7 +1646,8 @@ lessons:
           "stage": 2,
           "overlap_comm": true,
           "contiguous_gradients": true,
-          "reduce_bucket_size": 5e8
+          "reduce_bucket_size": 5e8,
+          "allgather_bucket_size": 5e8
         },
         "gradient_accumulation_steps": 4,
         "train_micro_batch_size_per_gpu": 8,
@@ -600,16 +1673,52 @@ lessons:
           config="ds_config.json",
           model_parameters=model.parameters()
       )
+
+      # Training loop is nearly identical
+      for batch in dataloader:
+          loss = model(batch)
+          model.backward(loss)    # DeepSpeed handles gradient sync
+          model.step()            # DeepSpeed handles optimizer step
       ```
 
-      ## PyTorch FSDP
+      ### ZeRO-Offload and ZeRO-Infinity
+
+      ZeRO-Offload moves optimizer states and optionally parameters to
+      CPU RAM, enabling training of models larger than GPU memory:
+
+      ```json
+      {
+        "zero_optimization": {
+          "stage": 3,
+          "offload_optimizer": {
+            "device": "cpu",
+            "pin_memory": true
+          },
+          "offload_param": {
+            "device": "cpu",
+            "pin_memory": true
+          }
+        }
+      }
+      ```
+
+      ZeRO-Infinity extends this to NVMe SSDs for trillion-parameter models.
+
+      ## 6. PyTorch FSDP
 
       **Fully Sharded Data Parallel (FSDP)** is PyTorch's native equivalent
       to ZeRO Stage 3. It shards parameters, gradients, and optimizer states:
 
       ```python
-      from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-      from torch.distributed.fsdp import MixedPrecision
+      from torch.distributed.fsdp import (
+          FullyShardedDataParallel as FSDP,
+          MixedPrecision,
+          ShardingStrategy,
+      )
+      from torch.distributed.fsdp.wrap import (
+          transformer_auto_wrap_policy,
+      )
+      from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
       bf16_policy = MixedPrecision(
           param_dtype=torch.bfloat16,
@@ -617,24 +1726,150 @@ lessons:
           buffer_dtype=torch.bfloat16,
       )
 
+      # Wrap each transformer layer as a separate FSDP unit
+      auto_wrap_policy = transformer_auto_wrap_policy(
+          transformer_layer_cls={LlamaDecoderLayer}
+      )
+
       model = FSDP(
           model,
           mixed_precision=bf16_policy,
+          auto_wrap_policy=auto_wrap_policy,
+          sharding_strategy=ShardingStrategy.FULL_SHARD,
           use_orig_params=True,
           limit_all_gathers=True,
+          device_id=torch.cuda.current_device(),
       )
       ```
 
-      ## Choosing a Strategy
+      ## 7. NCCL Collective Operations
 
-      | Model Size  | GPUs  | Recommended Strategy           |
-      |-------------|-------|--------------------------------|
-      | < 1B params | 1–8   | DDP                            |
-      | 1–10B       | 8–64  | FSDP or DeepSpeed ZeRO-2      |
-      | 10–100B     | 64+   | DeepSpeed ZeRO-3 + Pipeline    |
-      | 100B+       | 256+  | 3D parallelism (Megatron-LM)  |
+      Understanding NCCL collectives helps diagnose distributed training
+      performance:
+
+      ```
+      All-Reduce (DDP gradient sync):
+      GPU0: [1,2]    GPU0: [10,20]
+      GPU1: [3,4] →  GPU1: [10,20]    (sum of all)
+      GPU2: [6,14]   GPU2: [10,20]
+
+      All-Gather (FSDP parameter reconstruction):
+      GPU0: [A]      GPU0: [A,B,C]
+      GPU1: [B]  →   GPU1: [A,B,C]
+      GPU2: [C]      GPU2: [A,B,C]
+
+      Reduce-Scatter (FSDP gradient reduction):
+      GPU0: [1,2,3]    GPU0: [6]
+      GPU1: [4,5,6] →  GPU1: [12]   (sum, then scatter)
+      GPU2: [1,5,3]    GPU2: [12]
+      ```
+
+      ## 8. Choosing a Strategy
+
+      | Model Size  | GPUs  | Recommended Strategy             |
+      |-------------|-------|----------------------------------|
+      | < 1B params | 1-8   | DDP                              |
+      | 1-10B       | 8-64  | FSDP or DeepSpeed ZeRO-2        |
+      | 10-100B     | 64+   | DeepSpeed ZeRO-3 + Pipeline      |
+      | 100B+       | 256+  | 3D parallelism (Megatron-LM)    |
+
+      ## 9. Multi-Node SLURM Launch Pattern
+
+      ```bash
+      #!/bin/bash
+      #SBATCH --job-name=distributed-train
+      #SBATCH --partition=gpu
+      #SBATCH --nodes=4
+      #SBATCH --ntasks-per-node=1
+      #SBATCH --gres=gpu:a100:8
+      #SBATCH --cpus-per-task=64
+      #SBATCH --mem=512G
+      #SBATCH --time=48:00:00
+
+      export MASTER_ADDR=$(scontrol show hostname $SLURM_JOB_NODELIST | head -n1)
+      export MASTER_PORT=29500
+      export NCCL_DEBUG=INFO
+      export NCCL_IB_DISABLE=0
+
+      srun torchrun \
+        --nproc_per_node=8 \
+        --nnodes=$SLURM_NNODES \
+        --node_rank=$SLURM_NODEID \
+        --master_addr=$MASTER_ADDR \
+        --master_port=$MASTER_PORT \
+        train.py --config config.yaml
+      ```
+
+      ## 10. Debugging Distributed Training
+
+      Distributed training introduces unique failure modes. Common issues
+      and their diagnostics:
+
+      ```
+      Symptom                       Likely Cause                Fix
+      ────────────────────────────────────────────────────────────────
+      NCCL timeout                  Network config / firewall   Check NCCL_SOCKET_IFNAME
+      Hang at init_process_group    Master addr unreachable     Verify MASTER_ADDR, ports
+      OOM on rank 0 only            Logging/checkpointing       Only log on rank 0
+      Loss diverges at scale        LR not scaled               Use linear LR scaling
+      Different results each run    Non-deterministic ops       Set all seeds, use
+                                                                 deterministic algorithms
+      Slow training at scale        Communication bottleneck    Profile with NCCL_DEBUG,
+                                                                 check IB bandwidth
+      ```
+
+      ```python
+      import torch
+      import torch.distributed as dist
+      import os
+
+      def debug_distributed_env():
+          """Print distributed training debug info."""
+          rank = dist.get_rank()
+          world = dist.get_world_size()
+          local_rank = int(os.environ.get("LOCAL_RANK", 0))
+          hostname = os.uname().nodename
+
+          print(f"[Rank {rank}/{world}] host={hostname} "
+                f"local_rank={local_rank} "
+                f"device={torch.cuda.get_device_name(local_rank)} "
+                f"mem={torch.cuda.get_device_properties(local_rank).total_memory/1e9:.1f}GB")
+
+          # Test NCCL connectivity
+          tensor = torch.ones(1, device=f"cuda:{local_rank}") * rank
+          dist.all_reduce(tensor)
+          expected = sum(range(world))
+          assert tensor.item() == expected, f"NCCL test failed on rank {rank}"
+          if rank == 0:
+              print(f"NCCL connectivity test: PASSED (all {world} ranks)")
+      ```
+
+      ## 11. Activation Checkpointing
+
+      For very large models, activation memory dominates. Activation
+      checkpointing trades compute for memory by recomputing activations
+      during the backward pass instead of storing them:
+
+      ```python
+      from torch.utils.checkpoint import checkpoint
+
+      class CheckpointedTransformerBlock(nn.Module):
+          def __init__(self, layer):
+              super().__init__()
+              self.layer = layer
+
+          def forward(self, x):
+              # Recompute this layer's activations during backward
+              return checkpoint(self.layer, x, use_reentrant=False)
+
+      # Memory savings: ~50-70% activation memory reduction
+      # Compute cost: ~33% more FLOPs (one extra forward per layer)
+      ```
+
+      :::interactive{component="MPIVisualizer"}
 
     exercises:
+      # ---- Exercise 1: Quiz — DeepSpeed ZeRO Stages ----
       - id: "aiml-dist-q1"
         title: "DeepSpeed ZeRO Stages"
         description: "In DeepSpeed ZeRO, what additional component is partitioned in Stage 2 compared to Stage 1?"
@@ -651,158 +1886,266 @@ lessons:
           - "Stage 3 adds parameters on top of what Stage 2 partitions."
         solution: "DeepSpeed ZeRO Stage 1 partitions optimizer states (e.g., Adam's momentum and variance) across GPUs. Stage 2 additionally partitions the gradients, reducing per-GPU memory by ~8× compared to standard DDP. Stage 3 goes further by also partitioning the model parameters, enabling training of models that don't fit in a single GPU's memory at all."
 
+      # ---- Exercise 2: Quiz — Gradient Accumulation ----
+      - id: "aiml-dist-q2"
+        title: "Effective Batch Size Calculation"
+        description: "You are training on 4 nodes with 8 GPUs each. Your micro-batch size per GPU is 2, and gradient accumulation steps is 4. What is the effective (global) batch size?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "64"
+          - "128"
+          - "256"
+          - "512"
+        correct_answer: "256"
+        hints:
+          - "Effective batch = micro_batch × num_gpus × accumulation_steps."
+          - "Total GPUs = nodes × gpus_per_node = 4 × 8 = 32."
+        solution: "Effective batch size = micro_batch × num_gpus × accumulation_steps = 2 × 32 × 4 = 256. This is a critical formula for distributed training: you need to scale the learning rate proportionally (often using linear scaling or square-root scaling). With 32 GPUs and 4 accumulation steps, each optimizer step sees gradients averaged over 256 samples."
+
+      # ---- Exercise 3: Coding — DDP Setup Function ----
       - id: "aiml-dist-code1"
-        title: "PyTorch DDP Training Script"
-        description: "Write a complete PyTorch DDP training function that initializes the process group, wraps a model with DDP, creates a DistributedSampler, and runs a training loop. The function should take rank and world_size as arguments."
+        title: "DDP Initialization Helper"
+        description: "Write a function `setup_ddp(rank, world_size, backend='nccl')` that initializes PyTorch distributed training and returns a dictionary with 'rank', 'world_size', 'device', and 'is_main_process' (True if rank == 0). The function should set the CUDA device and call dist.init_process_group."
         exercise_type: "coding"
         difficulty: 3
+        starter_code: |
+          import torch
+          import torch.distributed as dist
+
+          def setup_ddp(rank, world_size, backend="nccl"):
+              """
+              Initialize DDP and return configuration dict.
+
+              Args:
+                  rank: Process rank.
+                  world_size: Total number of processes.
+                  backend: Communication backend (default: 'nccl').
+
+              Returns:
+                  Dict with rank, world_size, device, is_main_process.
+              """
+              # TODO: init process group, set device, return config
+              pass
+        test_cases:
+          - input: |
+              # Test without actual distributed init
+              def setup_ddp_mock(rank, world_size, backend="nccl"):
+                  device = f"cuda:{rank}" if backend == "nccl" else "cpu"
+                  return {
+                      "rank": rank,
+                      "world_size": world_size,
+                      "device": device,
+                      "is_main_process": rank == 0,
+                  }
+              r = setup_ddp_mock(0, 4)
+              print(r['is_main_process'], r['device'])
+            expected_output: "True cuda:0"
+          - input: |
+              def setup_ddp_mock(rank, world_size, backend="nccl"):
+                  device = f"cuda:{rank}" if backend == "nccl" else "cpu"
+                  return {
+                      "rank": rank,
+                      "world_size": world_size,
+                      "device": device,
+                      "is_main_process": rank == 0,
+                  }
+              r = setup_ddp_mock(3, 8)
+              print(r['is_main_process'], r['rank'], r['world_size'])
+            expected_output: "False 3 8"
+          - input: |
+              def setup_ddp_mock(rank, world_size, backend="nccl"):
+                  device = f"cuda:{rank}" if backend == "nccl" else "cpu"
+                  return {
+                      "rank": rank,
+                      "world_size": world_size,
+                      "device": device,
+                      "is_main_process": rank == 0,
+                  }
+              r = setup_ddp_mock(0, 2, "gloo")
+              print(r['device'])
+            expected_output: "cpu"
         hints:
-          - "Use dist.init_process_group('nccl', rank=rank, world_size=world_size)."
-          - "Don't forget to call sampler.set_epoch(epoch) for proper shuffling."
-          - "Clean up with dist.destroy_process_group() at the end."
+          - "Use dist.init_process_group(backend, rank=rank, world_size=world_size)."
+          - "Set the CUDA device with torch.cuda.set_device(rank)."
+          - "is_main_process should be True only for rank 0."
         solution: |
           ```python
           import torch
           import torch.distributed as dist
-          from torch.nn.parallel import DistributedDataParallel as DDP
-          from torch.utils.data import DataLoader
-          from torch.utils.data.distributed import DistributedSampler
 
-          def train(rank, world_size, dataset, model_cls):
-              # Initialize process group
-              dist.init_process_group(
-                  backend="nccl", rank=rank, world_size=world_size
-              )
-              torch.cuda.set_device(rank)
-
-              # Create model and wrap with DDP
-              model = model_cls().to(rank)
-              model = DDP(model, device_ids=[rank])
-
-              # Distributed sampler ensures each GPU gets unique data
-              sampler = DistributedSampler(
-                  dataset, num_replicas=world_size, rank=rank
-              )
-              dataloader = DataLoader(
-                  dataset, batch_size=32, sampler=sampler, num_workers=4
-              )
-
-              optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-
-              for epoch in range(10):
-                  sampler.set_epoch(epoch)
-                  model.train()
-                  for batch in dataloader:
-                      inputs = batch['input'].to(rank)
-                      labels = batch['label'].to(rank)
-                      optimizer.zero_grad(set_to_none=True)
-                      loss = model(inputs, labels).loss
-                      loss.backward()
-                      optimizer.step()
-
-                  if rank == 0:
-                      print(f"Epoch {epoch} complete")
-
-              dist.destroy_process_group()
+          def setup_ddp(rank, world_size, backend="nccl"):
+              dist.init_process_group(backend, rank=rank, world_size=world_size)
+              if backend == "nccl":
+                  torch.cuda.set_device(rank)
+                  device = f"cuda:{rank}"
+              else:
+                  device = "cpu"
+              return {
+                  "rank": rank,
+                  "world_size": world_size,
+                  "device": device,
+                  "is_main_process": rank == 0,
+              }
           ```
 
+      # ---- Exercise 4: Coding — DeepSpeed Config Builder ----
       - id: "aiml-dist-code2"
-        title: "DeepSpeed Configuration"
-        description: "Write a DeepSpeed JSON configuration file for training a 7B parameter model on 8 GPUs with ZeRO Stage 2, BF16 mixed precision, gradient accumulation of 4 steps, micro batch size of 2, and AdamW optimizer with learning rate 2e-5."
+        title: "DeepSpeed Configuration Generator"
+        description: "Write a function `build_deepspeed_config(zero_stage, micro_batch, accum_steps, lr, precision)` that returns a Python dictionary representing a valid DeepSpeed configuration. Include zero_optimization, optimizer (AdamW), scheduler (WarmupDecayLR), and the appropriate precision section (bf16 or fp16)."
         exercise_type: "coding"
         difficulty: 3
+        starter_code: |
+          def build_deepspeed_config(zero_stage=2, micro_batch=4,
+                                     accum_steps=4, lr=1e-4,
+                                     precision="bf16"):
+              """
+              Generate a DeepSpeed configuration dictionary.
+
+              Args:
+                  zero_stage: ZeRO optimization stage (0, 1, 2, or 3).
+                  micro_batch: Per-GPU micro batch size.
+                  accum_steps: Gradient accumulation steps.
+                  lr: Learning rate.
+                  precision: "bf16" or "fp16".
+
+              Returns:
+                  Dictionary with DeepSpeed config.
+              """
+              # TODO: build the config dict
+              pass
+        test_cases:
+          - input: |
+              cfg = build_deepspeed_config(2, 4, 4, 1e-4, "bf16")
+              print(cfg['zero_optimization']['stage'])
+            expected_output: "2"
+          - input: |
+              cfg = build_deepspeed_config(3, 2, 8, 2e-5, "fp16")
+              print(cfg['zero_optimization']['stage'], cfg.get('fp16', cfg.get('bf16', {})).get('enabled', False))
+            expected_output: "3 True"
+          - input: |
+              cfg = build_deepspeed_config(2, 4, 4, 1e-4)
+              print(cfg['train_micro_batch_size_per_gpu'], cfg['gradient_accumulation_steps'])
+            expected_output: "4 4"
+          - input: |
+              cfg = build_deepspeed_config(2, 4, 4, 3e-5)
+              print(cfg['optimizer']['params']['lr'])
+            expected_output: "3e-05"
         hints:
-          - "ZeRO Stage 2 partitions optimizer states and gradients."
-          - "Enable overlap_comm for better throughput."
-          - "Use bf16.enabled instead of fp16 for BF16 training."
+          - "ZeRO config goes under 'zero_optimization' with 'stage', 'overlap_comm', etc."
+          - "Use 'bf16': {'enabled': True} or 'fp16': {'enabled': True} based on precision."
+          - "Optimizer should be 'AdamW' with betas [0.9, 0.95]."
         solution: |
-          ```json
-          {
-            "bf16": {
-              "enabled": true
-            },
-            "zero_optimization": {
-              "stage": 2,
-              "overlap_comm": true,
-              "contiguous_gradients": true,
-              "reduce_bucket_size": 5e8,
-              "allgather_bucket_size": 5e8
-            },
-            "gradient_accumulation_steps": 4,
-            "train_micro_batch_size_per_gpu": 2,
-            "gradient_clipping": 1.0,
-            "optimizer": {
-              "type": "AdamW",
-              "params": {
-                "lr": 2e-5,
-                "betas": [0.9, 0.95],
-                "eps": 1e-8,
-                "weight_decay": 0.1
+          ```python
+          def build_deepspeed_config(zero_stage=2, micro_batch=4,
+                                     accum_steps=4, lr=1e-4,
+                                     precision="bf16"):
+              config = {
+                  "zero_optimization": {
+                      "stage": zero_stage,
+                      "overlap_comm": True,
+                      "contiguous_gradients": True,
+                      "reduce_bucket_size": 5e8,
+                  },
+                  "train_micro_batch_size_per_gpu": micro_batch,
+                  "gradient_accumulation_steps": accum_steps,
+                  "gradient_clipping": 1.0,
+                  "optimizer": {
+                      "type": "AdamW",
+                      "params": {
+                          "lr": lr,
+                          "betas": [0.9, 0.95],
+                          "eps": 1e-8,
+                          "weight_decay": 0.1,
+                      },
+                  },
+                  "scheduler": {
+                      "type": "WarmupDecayLR",
+                      "params": {
+                          "warmup_min_lr": 0,
+                          "warmup_max_lr": lr,
+                          "warmup_num_steps": 100,
+                          "total_num_steps": 10000,
+                      },
+                  },
               }
-            },
-            "scheduler": {
-              "type": "WarmupDecayLR",
-              "params": {
-                "warmup_min_lr": 0,
-                "warmup_max_lr": 2e-5,
-                "warmup_num_steps": 100,
-                "total_num_steps": 10000
-              }
-            },
-            "steps_per_print": 10,
-            "wall_clock_breakdown": false
-          }
+              if precision == "bf16":
+                  config["bf16"] = {"enabled": True}
+              else:
+                  config["fp16"] = {"enabled": True, "loss_scale": 0,
+                                    "initial_scale_power": 16}
+              return config
           ```
 
-      - id: "aiml-dist-lab1"
-        title: "Multi-Node Training SLURM Script"
-        description: "Write a SLURM batch script that runs a multi-node PyTorch training job across 4 nodes with 8 GPUs each (32 GPUs total). Include proper NCCL configuration, torchrun launch, and environment setup."
-        exercise_type: "lab"
-        difficulty: 4
+      # ---- Exercise 5: Coding — Effective Batch Size Calculator ----
+      - id: "aiml-dist-code3"
+        title: "Distributed Training Calculator"
+        description: "Write a function `compute_training_params(num_nodes, gpus_per_node, micro_batch, accum_steps, total_samples, base_lr)` that returns a dict with: 'total_gpus', 'effective_batch_size', 'steps_per_epoch', 'scaled_lr' (using linear scaling from a base of 8 GPUs), and 'samples_per_gpu_per_step'."
+        exercise_type: "coding"
+        difficulty: 2
+        starter_code: |
+          def compute_training_params(num_nodes=4, gpus_per_node=8,
+                                      micro_batch=2, accum_steps=4,
+                                      total_samples=1000000,
+                                      base_lr=1e-4):
+              """
+              Calculate distributed training parameters.
+
+              Args:
+                  num_nodes: Number of compute nodes.
+                  gpus_per_node: GPUs per node.
+                  micro_batch: Micro-batch size per GPU.
+                  accum_steps: Gradient accumulation steps.
+                  total_samples: Total training samples.
+                  base_lr: Base learning rate (calibrated for 8 GPUs).
+
+              Returns:
+                  Dict with training parameters.
+              """
+              # TODO: compute all values
+              pass
+        test_cases:
+          - input: |
+              r = compute_training_params(1, 8, 4, 1, 10000, 1e-4)
+              print(r['total_gpus'], r['effective_batch_size'])
+            expected_output: "8 32"
+          - input: |
+              r = compute_training_params(4, 8, 2, 4, 1000000, 1e-4)
+              print(r['effective_batch_size'])
+            expected_output: "256"
+          - input: |
+              r = compute_training_params(4, 8, 2, 4, 1000000, 1e-4)
+              print(r['steps_per_epoch'])
+            expected_output: "3906"
+          - input: |
+              r = compute_training_params(4, 8, 2, 4, 1000000, 1e-4)
+              print(f"{r['scaled_lr']:.1e}")
+            expected_output: "4.0e-04"
+          - input: |
+              r = compute_training_params(1, 8, 4, 1, 10000, 1e-4)
+              print(f"{r['scaled_lr']:.1e}")
+            expected_output: "1.0e-04"
         hints:
-          - "Use #SBATCH --nodes=4 and --gres=gpu:8."
-          - "Set MASTER_ADDR using scontrol show hostname."
-          - "Use srun to launch torchrun on each node."
+          - "effective_batch_size = micro_batch × total_gpus × accum_steps"
+          - "steps_per_epoch = total_samples // effective_batch_size"
+          - "Linear scaling: scaled_lr = base_lr × (total_gpus / base_gpus)"
+          - "base_gpus is 8 (the reference configuration)."
         solution: |
-          ```bash
-          #!/bin/bash
-          #SBATCH --job-name=distributed-train
-          #SBATCH --partition=gpu
-          #SBATCH --nodes=4
-          #SBATCH --ntasks-per-node=1
-          #SBATCH --gres=gpu:a100:8
-          #SBATCH --cpus-per-task=64
-          #SBATCH --mem=512G
-          #SBATCH --time=48:00:00
-          #SBATCH --output=train_%j.log
-
-          # NCCL Configuration
-          export NCCL_DEBUG=INFO
-          export NCCL_IB_DISABLE=0
-          export NCCL_IB_HCA=mlx5
-          export NCCL_SOCKET_IFNAME=eno1
-
-          # Master node info
-          export MASTER_ADDR=$(scontrol show hostname $SLURM_JOB_NODELIST | head -n1)
-          export MASTER_PORT=29500
-
-          # Load environment
-          module load apptainer
-
-          srun apptainer exec --nv \
-            --bind /scratch:/scratch \
-            /shared/containers/pytorch-24.01.sif \
-            torchrun \
-              --nproc_per_node=8 \
-              --nnodes=$SLURM_NNODES \
-              --node_rank=$SLURM_NODEID \
-              --master_addr=$MASTER_ADDR \
-              --master_port=$MASTER_PORT \
-              train.py \
-                --deepspeed ds_config.json \
-                --bf16 \
-                --batch_size 2 \
-                --gradient_accumulation_steps 4
+          ```python
+          def compute_training_params(num_nodes=4, gpus_per_node=8,
+                                      micro_batch=2, accum_steps=4,
+                                      total_samples=1000000,
+                                      base_lr=1e-4):
+              total_gpus = num_nodes * gpus_per_node
+              effective_batch = micro_batch * total_gpus * accum_steps
+              base_gpus = 8
+              return {
+                  "total_gpus": total_gpus,
+                  "effective_batch_size": effective_batch,
+                  "steps_per_epoch": total_samples // effective_batch,
+                  "scaled_lr": base_lr * (total_gpus / base_gpus),
+                  "samples_per_gpu_per_step": micro_batch * accum_steps,
+              }
           ```
 
   # ---------------------------------------------------------------------------
@@ -813,13 +2156,15 @@ lessons:
     order: 4
     objectives:
       - "Design efficient ETL pipelines for ML training data"
-      - "Version datasets with DVC (Data Version Control)"
-      - "Use WebDataset for large-scale streaming data loading"
-      - "Build feature stores for reusable ML features"
+      - "Optimize PyTorch DataLoader with prefetching and pinned memory"
+      - "Use NVIDIA DALI for GPU-accelerated data loading"
+      - "Implement streaming datasets with WebDataset"
+      - "Understand Lustre I/O patterns for large-scale training"
+      - "Design checkpoint and restart patterns for long training runs"
     content_md: |
       # Data Pipeline Engineering
 
-      ## ETL for Machine Learning
+      ## 1. ETL for Machine Learning
 
       ML data pipelines differ from traditional ETL because they must
       handle unstructured data (images, text, audio), maintain
@@ -833,74 +2178,151 @@ lessons:
       └────────┘    └───────────┘    └──────────┘    └─────────┘
       ```
 
+      The **GPU utilization** gap is the most common performance problem:
+
+      ```
+      Timeline — Data loading bottleneck:
+      CPU: ──[load]──[transform]──[load]──[transform]──[load]──
+      GPU: ──────────[train]────────────[train]────────────────
+                          ↑ idle ↑            ↑ idle ↑
+
+      Timeline — Optimized pipeline (prefetch + parallel):
+      CPU Workers: ──[load+transform]──[load+transform]──...
+      CPU→GPU:     ──[DMA transfer]──[DMA transfer]──...
+      GPU:         ──[train]──[train]──[train]──[train]──...
+                   ^^^^^^ fully utilized ^^^^^^
+      ```
+
       ### Efficient Storage Formats
 
-      | Format      | Best For           | Random Access | Compression |
-      |-------------|--------------------|---------------|-------------|
-      | Parquet     | Tabular data       | Column-level  | Excellent   |
-      | TFRecord    | TensorFlow         | Sequential    | Good        |
-      | WebDataset  | Large-scale PyTorch| Sequential    | Good        |
-      | HDF5        | Scientific arrays  | Dataset-level | Good        |
-      | Arrow/Lance | Feature stores     | Row + Column  | Excellent   |
+      | Format      | Best For            | Random Access | Compression |
+      |-------------|---------------------|---------------|-------------|
+      | Parquet     | Tabular data        | Column-level  | Excellent   |
+      | TFRecord    | TensorFlow          | Sequential    | Good        |
+      | WebDataset  | Large-scale PyTorch | Sequential    | Good        |
+      | HDF5        | Scientific arrays   | Dataset-level | Good        |
+      | Arrow/Lance | Feature stores      | Row + Column  | Excellent   |
+      | Mosaic MDS  | Streaming training  | Sequential    | Excellent   |
 
-      ### Example: Converting ImageNet to WebDataset
+      :::interactive{component="PipelineBuilder" config='{"preset":"ml-training"}'}
+
+      ## 2. DataLoader Optimization
+
+      The PyTorch DataLoader has many tuning knobs that can dramatically
+      affect training throughput:
 
       ```python
-      import webdataset as wds
-      import os
+      from torch.utils.data import DataLoader
 
-      def create_shards(image_dir, output_pattern, max_size=1e9):
-          """Convert a directory of images to WebDataset shards."""
-          with wds.ShardWriter(output_pattern, maxsize=max_size) as sink:
-              for class_dir in sorted(os.listdir(image_dir)):
-                  class_path = os.path.join(image_dir, class_dir)
-                  if not os.path.isdir(class_path):
-                      continue
-                  for fname in sorted(os.listdir(class_path)):
-                      image_path = os.path.join(class_path, fname)
-                      with open(image_path, "rb") as f:
-                          image_data = f.read()
-                      sink.write({
-                          "__key__": f"{class_dir}/{os.path.splitext(fname)[0]}",
-                          "jpg": image_data,
-                          "cls": class_dir.encode(),
-                      })
-
-      # Creates shards: imagenet-000000.tar, imagenet-000001.tar, ...
-      create_shards("/data/imagenet/train", "imagenet-%06d.tar")
+      loader = DataLoader(
+          dataset,
+          batch_size=64,           # Maximize GPU memory utilization
+          num_workers=8,           # Parallel data loading processes
+          pin_memory=True,         # Use page-locked memory for DMA
+          persistent_workers=True, # Keep workers alive between epochs
+          prefetch_factor=3,       # Batches prefetched per worker
+          drop_last=True,          # Avoid variable-size last batch
+      )
       ```
 
-      ## Data Version Control (DVC)
+      **Tuning guidelines:**
 
-      DVC tracks large datasets alongside Git, storing actual data in
-      remote storage (S3, GCS, Azure Blob, SSH):
-
-      ```bash
-      # Initialize DVC in a Git repo
-      cd my-ml-project
-      dvc init
-
-      # Track a large dataset
-      dvc add data/training_data.parquet
-      git add data/training_data.parquet.dvc data/.gitignore
-      git commit -m "Add training data v1"
-
-      # Configure remote storage
-      dvc remote add -d myremote s3://my-bucket/dvc-store
-      dvc push
-
-      # Later: switch to a different data version
-      git checkout data-v2
-      dvc checkout  # Downloads the correct version from S3
+      ```
+      Parameter           Rule of Thumb
+      ────────────────────────────────────────────────────────
+      num_workers         = 4 × num_GPUs (start here, profile)
+      pin_memory          = True (always for GPU training)
+      persistent_workers  = True (avoids worker restart overhead)
+      prefetch_factor     = 2-4 (higher = more memory, less stall)
+      batch_size          = largest that fits GPU memory
+      drop_last           = True for DDP (avoids uneven batches)
       ```
 
-      DVC creates `.dvc` files that contain an MD5 hash pointing to the
-      actual data in remote storage. Git tracks these small pointer files.
+      ### Memory-Mapped Datasets
 
-      ## Streaming Data Loading with WebDataset
+      For datasets that fit on local SSD but not in RAM, use
+      memory-mapped access:
+
+      ```python
+      import numpy as np
+      import torch
+      from torch.utils.data import Dataset
+
+      class MmapDataset(Dataset):
+          def __init__(self, data_path, shape, dtype=np.float32):
+              self.data = np.memmap(data_path, dtype=dtype,
+                                   mode='r', shape=shape)
+
+          def __len__(self):
+              return self.data.shape[0]
+
+          def __getitem__(self, idx):
+              return torch.from_numpy(self.data[idx].copy())
+      ```
+
+      ## 3. NVIDIA DALI — GPU-Accelerated Data Loading
+
+      DALI (Data Loading Library) offloads data decoding, augmentation,
+      and preprocessing to the GPU, freeing the CPU for other work:
+
+      ```python
+      from nvidia.dali import pipeline_def, fn, types
+      from nvidia.dali.plugin.pytorch import DALIGenericIterator
+
+      @pipeline_def(batch_size=64, num_threads=8, device_id=0)
+      def training_pipeline():
+          # Read images from disk
+          jpegs, labels = fn.readers.file(
+              file_root="/data/imagenet/train",
+              random_shuffle=True,
+              name="Reader"
+          )
+          # Decode on GPU (uses NVJPEG hardware decoder)
+          images = fn.decoders.image(jpegs, device="mixed",
+                                     output_type=types.RGB)
+          # GPU augmentations
+          images = fn.random_resized_crop(images, size=224,
+                                          random_area=[0.08, 1.0])
+          images = fn.flip(images, horizontal=fn.random.coin_flip())
+          images = fn.crop_mirror_normalize(
+              images,
+              mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
+              std=[0.229 * 255, 0.224 * 255, 0.225 * 255],
+              dtype=types.FLOAT,
+              output_layout="CHW",
+          )
+          return images, labels
+
+      # Create PyTorch-compatible iterator
+      pipe = training_pipeline()
+      pipe.build()
+      dali_loader = DALIGenericIterator(
+          pipe, ["images", "labels"],
+          reader_name="Reader"
+      )
+
+      for batch in dali_loader:
+          images = batch[0]["images"]   # Already on GPU!
+          labels = batch[0]["labels"]
+      ```
+
+      ```
+      CPU-only Pipeline:                DALI GPU Pipeline:
+      ┌─────────────────┐              ┌─────────────────┐
+      │ CPU: Read JPEG  │              │ CPU: Read JPEG  │
+      │ CPU: Decode     │              │ GPU: NVJPEG Dec │ ← HW decoder
+      │ CPU: Resize     │              │ GPU: Resize     │
+      │ CPU: Augment    │              │ GPU: Augment    │
+      │ CPU: Normalize  │              │ GPU: Normalize  │
+      │ CPU→GPU: Xfer   │              │ (already on GPU)│ ← No transfer!
+      └─────────────────┘              └─────────────────┘
+      Time: ~15ms/batch               Time: ~3ms/batch
+      ```
+
+      ## 4. Streaming Datasets with WebDataset
 
       For datasets too large to fit on local disk, **WebDataset** streams
-      directly from tar shards, which is ideal for distributed training:
+      directly from tar shards. This is ideal for distributed training:
 
       ```python
       import webdataset as wds
@@ -925,41 +2347,186 @@ lessons:
       dataloader = wds.WebLoader(dataset, batch_size=256, num_workers=8)
       ```
 
-      Benefits over standard PyTorch DataLoader:
-      - **Sequential reads** — optimal for spinning disks and object storage
-      - **No filesystem metadata overhead** — one tar file vs millions of small files
-      - **Built-in sharding** — each worker processes different shards
-
-      ## Feature Stores
-
-      A feature store centralizes computed features for reuse across
-      training and inference:
+      ### Creating WebDataset Shards
 
       ```python
-      # Example with Feast feature store
-      from feast import FeatureStore
+      import webdataset as wds
+      import os
 
-      store = FeatureStore(repo_path="feature_repo/")
+      def create_shards(image_dir, output_pattern, max_size=1e9):
+          """Convert a directory of images to WebDataset shards."""
+          with wds.ShardWriter(output_pattern, maxsize=max_size) as sink:
+              for class_dir in sorted(os.listdir(image_dir)):
+                  class_path = os.path.join(image_dir, class_dir)
+                  if not os.path.isdir(class_path):
+                      continue
+                  for fname in sorted(os.listdir(class_path)):
+                      image_path = os.path.join(class_path, fname)
+                      with open(image_path, "rb") as f:
+                          image_data = f.read()
+                      sink.write({
+                          "__key__": f"{class_dir}/{os.path.splitext(fname)[0]}",
+                          "jpg": image_data,
+                          "cls": class_dir.encode(),
+                      })
 
-      # Retrieve training features
-      training_df = store.get_historical_features(
-          entity_df=entity_df,
-          features=[
-              "user_features:avg_session_duration",
-              "user_features:total_purchases",
-              "item_features:category_embedding",
-              "item_features:price_percentile",
-          ],
-      ).to_df()
-
-      # Online serving (low-latency)
-      feature_vector = store.get_online_features(
-          features=[...],
-          entity_rows=[{"user_id": 12345}],
-      ).to_dict()
+      create_shards("/data/imagenet/train", "shards/train-%06d.tar")
       ```
 
+      ## 5. Lustre I/O Patterns for Training
+
+      HPC clusters typically use Lustre parallel filesystem. Understanding
+      striping and I/O patterns is critical for training performance:
+
+      ```
+      Lustre Architecture:
+      ┌──────────────┐
+      │  Compute     │      ┌─────────┐
+      │  Nodes       │─────→│  MDS    │  (Metadata Server)
+      │              │      └─────────┘
+      │  Node 0      │      ┌─────────┐
+      │  Node 1      │─────→│  OST 0  │  (Object Storage Targets)
+      │  Node 2      │─────→│  OST 1  │
+      │  ...         │─────→│  OST 2  │
+      │  Node N      │─────→│  ...    │
+      └──────────────┘      └─────────┘
+
+      File Striping (across OSTs):
+      ┌───────────────────────────────────────────┐
+      │  Large file (e.g., training_data.tar)     │
+      │  ┌─────────┐┌─────────┐┌─────────┐       │
+      │  │ Stripe 0 ││ Stripe 1 ││ Stripe 2 │      │
+      │  │ → OST 0  ││ → OST 1  ││ → OST 2  │      │
+      │  └─────────┘└─────────┘└─────────┘       │
+      └───────────────────────────────────────────┘
+      ```
+
+      ```bash
+      # Set stripe count and size for a training data directory
+      lfs setstripe -c 4 -S 4M /scratch/training_data/
+
+      # Check current striping
+      lfs getstripe /scratch/training_data/
+
+      # Optimal patterns for ML:
+      # - Large sequential reads: stripe_count=4, stripe_size=4M
+      # - Many small files: stripe_count=1 (avoid metadata overhead)
+      # - Checkpoints: stripe_count=-1 (all OSTs for max bandwidth)
+      ```
+
+      **Best practices for Lustre I/O:**
+      1. **Avoid many small files** — pack into tar/WebDataset shards
+      2. **Use large sequential reads** — minimize random I/O
+      3. **Stripe checkpoints across all OSTs** for write bandwidth
+      4. **Stage data to node-local SSD** when possible (`/tmp`, `/local`)
+      5. **Use collective I/O** (MPI-IO) for parallel reads
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
+      ## 6. Checkpoint Patterns for Long Training Runs
+
+      Large-scale training runs often take days or weeks. Robust
+      checkpointing is essential for fault tolerance:
+
+      ```python
+      import torch
+      import os
+      import json
+      from pathlib import Path
+
+      def save_checkpoint(model, optimizer, scheduler, epoch, step,
+                          loss, checkpoint_dir, max_checkpoints=3):
+          """Save training checkpoint with rotation."""
+          ckpt_path = Path(checkpoint_dir) / f"ckpt-epoch{epoch}-step{step}.pt"
+          torch.save({
+              "model_state_dict": model.state_dict(),
+              "optimizer_state_dict": optimizer.state_dict(),
+              "scheduler_state_dict": scheduler.state_dict(),
+              "epoch": epoch,
+              "global_step": step,
+              "loss": loss,
+          }, ckpt_path)
+
+          # Rotate: keep only the most recent N checkpoints
+          ckpts = sorted(Path(checkpoint_dir).glob("ckpt-*.pt"),
+                         key=os.path.getmtime)
+          while len(ckpts) > max_checkpoints:
+              ckpts.pop(0).unlink()
+
+      def load_checkpoint(model, optimizer, scheduler, checkpoint_dir):
+          """Load the most recent checkpoint."""
+          ckpts = sorted(Path(checkpoint_dir).glob("ckpt-*.pt"),
+                         key=os.path.getmtime)
+          if not ckpts:
+              return 0, 0  # start from scratch
+          ckpt = torch.load(ckpts[-1], map_location="cpu")
+          model.load_state_dict(ckpt["model_state_dict"])
+          optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+          scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+          return ckpt["epoch"], ckpt["global_step"]
+      ```
+
+      ### DeepSpeed Checkpointing
+
+      DeepSpeed handles distributed checkpointing natively:
+
+      ```python
+      # Save (called on all ranks)
+      model.save_checkpoint(
+          save_dir="checkpoints/",
+          tag=f"step-{global_step}",
+          client_state={"epoch": epoch, "step": global_step},
+      )
+
+      # Load (called on all ranks)
+      _, client_state = model.load_checkpoint(
+          load_dir="checkpoints/",
+          tag=f"step-{global_step}",
+      )
+      epoch = client_state["epoch"]
+      ```
+
+      ### Async Checkpointing
+
+      For large models, checkpoint saving can take minutes. Use async I/O:
+
+      ```python
+      import torch
+      import threading
+
+      def async_save_checkpoint(state_dict, path):
+          """Save checkpoint in background thread."""
+          # Copy state dict to CPU first (fast)
+          cpu_state = {k: v.cpu() for k, v in state_dict.items()}
+
+          def _save():
+              torch.save(cpu_state, path)
+
+          thread = threading.Thread(target=_save)
+          thread.start()
+          return thread  # caller can join() if needed
+      ```
+
+      ## 7. Data Version Control (DVC)
+
+      DVC tracks large datasets alongside Git:
+
+      ```bash
+      # Initialize DVC
+      dvc init
+      dvc add data/training_data.parquet
+      dvc remote add -d myremote s3://my-bucket/dvc-store
+      dvc push
+
+      # Reproduce a specific data version
+      git checkout v2.0
+      dvc checkout
+      ```
+
+      :::interactive{component="StorageStripingSimulator"}
+
     exercises:
+      # ---- Exercise 1: Quiz — Data Format Selection ----
       - id: "aiml-data-q1"
         title: "Data Format Selection"
         description: "Which data format is most efficient for streaming large image datasets to GPUs during distributed PyTorch training?"
@@ -976,85 +2543,234 @@ lessons:
           - "Think about what happens with millions of small files on a network filesystem."
         solution: "WebDataset tar shards are optimal for large-scale distributed training because they use sequential I/O (ideal for object storage and parallel filesystems), avoid the metadata overhead of millions of small files, and support built-in sharding for multi-worker data loading. Individual files cause filesystem metadata bottlenecks, HDF5 has locking issues with concurrent readers, and SQLite isn't designed for this workload."
 
+      # ---- Exercise 2: Quiz — DataLoader Configuration ----
+      - id: "aiml-data-q2"
+        title: "DataLoader Optimization"
+        description: "Which PyTorch DataLoader parameter enables page-locked memory allocation to speed up CPU-to-GPU data transfers via DMA?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "num_workers"
+          - "pin_memory"
+          - "prefetch_factor"
+          - "persistent_workers"
+        correct_answer: "pin_memory"
+        hints:
+          - "DMA (Direct Memory Access) requires the source memory to be non-swappable."
+          - "Page-locked (pinned) memory cannot be swapped to disk by the OS."
+        solution: "pin_memory=True allocates batch tensors in page-locked (pinned) CPU memory. This enables the GPU's DMA engine to transfer data directly without involving the CPU, and it's required for non_blocking=True transfers. Without pinned memory, the CUDA runtime must first copy data to a pinned staging buffer before DMA transfer, adding an extra copy. On HPC systems with fast GPUs, this can improve DataLoader throughput by 2-3×."
+
+      # ---- Exercise 3: Coding — DataLoader Config Builder ----
       - id: "aiml-data-code1"
-        title: "DVC Dataset Versioning"
-        description: "Write a sequence of bash commands that: (1) initialize DVC in an existing Git repo, (2) add a large dataset directory to DVC tracking, (3) configure an S3 remote, (4) push data to remote, and (5) commit the DVC tracking files to Git."
+        title: "Optimized DataLoader Configuration"
+        description: "Write a function `build_dataloader_config(num_gpus, gpu_memory_gb, sample_size_mb, is_distributed)` that returns a dictionary with optimal DataLoader parameters: 'batch_size' (fill 70% of GPU memory), 'num_workers' (4 × num_gpus, capped at 32), 'pin_memory' (True), 'persistent_workers' (True if num_workers > 0), 'prefetch_factor' (2), 'drop_last' (True if distributed)."
         exercise_type: "coding"
         difficulty: 2
+        starter_code: |
+          def build_dataloader_config(num_gpus=1, gpu_memory_gb=80.0,
+                                      sample_size_mb=0.5,
+                                      is_distributed=False):
+              """
+              Build optimal DataLoader configuration.
+
+              Args:
+                  num_gpus: Number of GPUs per node.
+                  gpu_memory_gb: GPU memory in GB.
+                  sample_size_mb: Size of one sample in MB.
+                  is_distributed: Whether using DDP/FSDP.
+
+              Returns:
+                  Dict with DataLoader parameters.
+              """
+              # TODO: calculate optimal parameters
+              pass
+        test_cases:
+          - input: |
+              cfg = build_dataloader_config(1, 80.0, 0.5, False)
+              print(cfg['pin_memory'])
+            expected_output: "True"
+          - input: |
+              cfg = build_dataloader_config(8, 80.0, 0.5, True)
+              print(cfg['drop_last'])
+            expected_output: "True"
+          - input: |
+              cfg = build_dataloader_config(1, 80.0, 0.5, False)
+              print(cfg['drop_last'])
+            expected_output: "False"
+          - input: |
+              cfg = build_dataloader_config(8, 80.0, 0.5, False)
+              print(cfg['num_workers'])
+            expected_output: "32"
+          - input: |
+              cfg = build_dataloader_config(16, 40.0, 1.0, True)
+              print(cfg['num_workers'])
+            expected_output: "32"
         hints:
-          - "dvc init sets up the .dvc/ directory."
-          - "dvc add creates a .dvc file and updates .gitignore."
-          - "dvc remote add -d sets the default remote."
-        solution: |
-          ```bash
-          # 1. Initialize DVC
-          cd my-ml-project
-          dvc init
-
-          # 2. Track the dataset
-          dvc add data/training_dataset/
-
-          # 3. Configure S3 remote storage
-          dvc remote add -d s3store s3://my-bucket/dvc-cache
-
-          # 4. Push data to remote
-          dvc push
-
-          # 5. Commit tracking files to Git
-          git add data/training_dataset.dvc data/.gitignore .dvc/config
-          git commit -m "Track training dataset v1 with DVC"
-          git push
-          ```
-
-      - id: "aiml-data-lab1"
-        title: "WebDataset Streaming Pipeline"
-        description: "Write a complete Python script that creates a WebDataset-based DataLoader for streaming image classification data from tar shards. Include proper shuffling, decoding, augmentation transforms (RandomResizedCrop, HorizontalFlip, Normalize), and batching."
-        exercise_type: "lab"
-        difficulty: 3
-        hints:
-          - "Use wds.WebDataset with a shard URL pattern."
-          - "Chain .shuffle(), .decode(), .to_tuple(), and .map_tuple()."
-          - "Use wds.WebLoader instead of torch.utils.data.DataLoader."
+          - "batch_size = int(gpu_memory_gb * 1024 * 0.7 / sample_size_mb)"
+          - "Cap num_workers at 32 to avoid excessive process overhead."
+          - "persistent_workers avoids re-forking workers every epoch."
         solution: |
           ```python
-          import webdataset as wds
-          import torchvision.transforms as T
+          def build_dataloader_config(num_gpus=1, gpu_memory_gb=80.0,
+                                      sample_size_mb=0.5,
+                                      is_distributed=False):
+              usable_mb = gpu_memory_gb * 1024 * 0.7
+              batch_size = max(1, int(usable_mb / sample_size_mb))
+              num_workers = min(4 * num_gpus, 32)
+              return {
+                  "batch_size": batch_size,
+                  "num_workers": num_workers,
+                  "pin_memory": True,
+                  "persistent_workers": num_workers > 0,
+                  "prefetch_factor": 2,
+                  "drop_last": is_distributed,
+              }
+          ```
 
-          # Augmentation pipeline
-          train_transform = T.Compose([
-              T.RandomResizedCrop(224),
-              T.RandomHorizontalFlip(),
-              T.ColorJitter(brightness=0.2, contrast=0.2),
-              T.ToTensor(),
-              T.Normalize(
-                  mean=[0.485, 0.456, 0.406],
-                  std=[0.229, 0.224, 0.225],
-              ),
-          ])
+      # ---- Exercise 4: Coding — Checkpoint Manager ----
+      - id: "aiml-data-code2"
+        title: "Training Checkpoint Manager"
+        description: "Write a class `CheckpointManager` with methods `save(epoch, step, metrics)` and `get_latest()`. The `save` method stores checkpoint metadata in a list and keeps only the `max_keep` most recent entries. The `get_latest` method returns the most recent checkpoint metadata dict or None if no checkpoints exist. Each checkpoint dict should have keys: 'epoch', 'step', 'metrics', 'path'."
+        exercise_type: "coding"
+        difficulty: 3
+        starter_code: |
+          class CheckpointManager:
+              """Manages training checkpoints with rotation."""
 
-          # Create streaming dataset
-          url_pattern = "/data/shards/train-{000000..001281}.tar"
-          dataset = (
-              wds.WebDataset(url_pattern, shardshuffle=True)
-              .shuffle(5000)
-              .decode("pil")
-              .to_tuple("jpg;png", "cls")
-              .map_tuple(train_transform, lambda c: int(c))
-          )
+              def __init__(self, checkpoint_dir="/checkpoints", max_keep=3):
+                  self.checkpoint_dir = checkpoint_dir
+                  self.max_keep = max_keep
+                  self.checkpoints = []
 
-          # Create DataLoader
-          loader = wds.WebLoader(
-              dataset,
-              batch_size=256,
-              num_workers=8,
-              pin_memory=True,
-          )
+              def save(self, epoch, step, metrics):
+                  """
+                  Save a checkpoint reference. Returns the checkpoint path.
+                  """
+                  # TODO: create checkpoint dict, add to list, rotate old ones
+                  pass
 
-          # Training loop
-          for images, labels in loader:
-              images = images.cuda(non_blocking=True)
-              labels = labels.cuda(non_blocking=True)
-              # ... forward, backward, step
+              def get_latest(self):
+                  """
+                  Return the most recent checkpoint dict, or None.
+                  """
+                  # TODO: return latest checkpoint
+                  pass
+        test_cases:
+          - input: |
+              mgr = CheckpointManager("/ckpts", max_keep=2)
+              print(mgr.get_latest())
+            expected_output: "None"
+          - input: |
+              mgr = CheckpointManager("/ckpts", max_keep=2)
+              mgr.save(0, 100, {"loss": 1.5})
+              print(mgr.get_latest()['step'])
+            expected_output: "100"
+          - input: |
+              mgr = CheckpointManager("/ckpts", max_keep=2)
+              mgr.save(0, 100, {"loss": 1.5})
+              mgr.save(0, 200, {"loss": 1.2})
+              mgr.save(1, 300, {"loss": 0.9})
+              print(len(mgr.checkpoints))
+            expected_output: "2"
+          - input: |
+              mgr = CheckpointManager("/ckpts", max_keep=2)
+              mgr.save(0, 100, {"loss": 1.5})
+              mgr.save(0, 200, {"loss": 1.2})
+              mgr.save(1, 300, {"loss": 0.9})
+              print(mgr.get_latest()['step'])
+            expected_output: "300"
+        hints:
+          - "Build the path as f'{checkpoint_dir}/ckpt-epoch{epoch}-step{step}.pt'."
+          - "Append to self.checkpoints and then trim to max_keep."
+          - "get_latest returns self.checkpoints[-1] if non-empty, else None."
+        solution: |
+          ```python
+          class CheckpointManager:
+              def __init__(self, checkpoint_dir="/checkpoints", max_keep=3):
+                  self.checkpoint_dir = checkpoint_dir
+                  self.max_keep = max_keep
+                  self.checkpoints = []
+
+              def save(self, epoch, step, metrics):
+                  path = f"{self.checkpoint_dir}/ckpt-epoch{epoch}-step{step}.pt"
+                  ckpt = {
+                      "epoch": epoch,
+                      "step": step,
+                      "metrics": metrics,
+                      "path": path,
+                  }
+                  self.checkpoints.append(ckpt)
+                  while len(self.checkpoints) > self.max_keep:
+                      self.checkpoints.pop(0)
+                  return path
+
+              def get_latest(self):
+                  return self.checkpoints[-1] if self.checkpoints else None
+          ```
+
+      # ---- Exercise 5: Coding — Lustre Stripe Configuration ----
+      - id: "aiml-data-code3"
+        title: "Lustre Stripe Advisor"
+        description: "Write a function `recommend_stripe_config(file_type, file_size_gb, num_osts)` that returns a dictionary with 'stripe_count' and 'stripe_size' recommendations. Rules: for 'checkpoint' files, use all OSTs (stripe_count = min(num_osts, file_size_gb * 4)) and stripe_size '4M'; for 'dataset_shards', use 4 OSTs and stripe_size '4M'; for 'small_files', use 1 OST and stripe_size '1M'; for 'model_weights', use min(num_osts, 8) and stripe_size '4M'."
+        exercise_type: "coding"
+        difficulty: 3
+        starter_code: |
+          def recommend_stripe_config(file_type, file_size_gb=1.0,
+                                      num_osts=16):
+              """
+              Recommend Lustre stripe configuration for ML workloads.
+
+              Args:
+                  file_type: One of 'checkpoint', 'dataset_shards',
+                             'small_files', 'model_weights'.
+                  file_size_gb: Approximate file size in GB.
+                  num_osts: Number of available OSTs.
+
+              Returns:
+                  Dict with 'stripe_count' and 'stripe_size'.
+              """
+              # TODO: implement stripe recommendation logic
+              pass
+        test_cases:
+          - input: |
+              r = recommend_stripe_config("checkpoint", 20.0, 16)
+              print(r['stripe_count'], r['stripe_size'])
+            expected_output: "16 4M"
+          - input: |
+              r = recommend_stripe_config("small_files", 0.001, 16)
+              print(r['stripe_count'], r['stripe_size'])
+            expected_output: "1 1M"
+          - input: |
+              r = recommend_stripe_config("dataset_shards", 50.0, 16)
+              print(r['stripe_count'], r['stripe_size'])
+            expected_output: "4 4M"
+          - input: |
+              r = recommend_stripe_config("model_weights", 5.0, 4)
+              print(r['stripe_count'])
+            expected_output: "4"
+          - input: |
+              r = recommend_stripe_config("model_weights", 5.0, 32)
+              print(r['stripe_count'])
+            expected_output: "8"
+        hints:
+          - "Checkpoints need maximum write bandwidth — spread across as many OSTs as practical."
+          - "Small files should NOT be striped — metadata overhead dominates."
+          - "Dataset shards use moderate striping (4 OSTs) for balanced read throughput."
+        solution: |
+          ```python
+          def recommend_stripe_config(file_type, file_size_gb=1.0,
+                                      num_osts=16):
+              if file_type == "checkpoint":
+                  sc = min(num_osts, max(1, int(file_size_gb * 4)))
+                  return {"stripe_count": sc, "stripe_size": "4M"}
+              elif file_type == "dataset_shards":
+                  return {"stripe_count": 4, "stripe_size": "4M"}
+              elif file_type == "small_files":
+                  return {"stripe_count": 1, "stripe_size": "1M"}
+              elif file_type == "model_weights":
+                  return {"stripe_count": min(num_osts, 8), "stripe_size": "4M"}
+              else:
+                  return {"stripe_count": 1, "stripe_size": "1M"}
           ```
 
   # ---------------------------------------------------------------------------
@@ -1067,11 +2783,13 @@ lessons:
       - "Set up MLflow for experiment tracking and model management"
       - "Log metrics, parameters, and artifacts during training"
       - "Register and version models in the MLflow Model Registry"
-      - "Compare experiments and ensure reproducibility"
+      - "Use DVC for data and model artifact versioning"
+      - "Implement A/B testing and promotion pipelines"
+      - "Design artifact storage strategies for reproducibility"
     content_md: |
       # Model Registry & Versioning
 
-      ## Why Track Experiments?
+      ## 1. Why Track Experiments?
 
       ML development is highly iterative — dozens of hyperparameter
       combinations, data versions, and architecture tweaks. Without
@@ -1087,10 +2805,11 @@ lessons:
       │                    │       │ Model: bert-ft-v3        │
       │ results_final_v2   │       │ Data: dataset-v2.1       │
       │ results_FINAL_v3   │       │ Artifact: model.pt       │
+      │ model_REALLY_FINAL │       │ Git: a1b2c3d             │
       └────────────────────┘       └──────────────────────────┘
       ```
 
-      ## MLflow Setup
+      ## 2. MLflow Components
 
       MLflow has four main components:
 
@@ -1101,11 +2820,32 @@ lessons:
       | Models           | Standard model packaging format      |
       | Model Registry   | Centralized model store + lifecycle  |
 
+      ```
+      MLflow Architecture:
+      ┌───────────────────────────────────────────────────────┐
+      │                   MLflow Server                        │
+      │                                                        │
+      │  ┌──────────────┐   ┌──────────────┐                  │
+      │  │  Tracking     │   │   Model      │                  │
+      │  │  API          │   │   Registry   │                  │
+      │  └──────┬───────┘   └──────┬───────┘                  │
+      │         │                   │                           │
+      │  ┌──────▼──────────────────▼──────┐                   │
+      │  │         Backend Store           │                   │
+      │  │  (PostgreSQL / MySQL / SQLite)  │                   │
+      │  └───────────────┬────────────────┘                   │
+      │                  │                                     │
+      │  ┌───────────────▼────────────────┐                   │
+      │  │       Artifact Store            │                   │
+      │  │  (S3 / GCS / Azure / HDFS)     │                   │
+      │  └────────────────────────────────┘                   │
+      └───────────────────────────────────────────────────────┘
+      ```
+
       ### Deploy MLflow Tracking Server
 
       ```bash
       # Using Docker Compose
-      # docker-compose.yaml
       version: "3.9"
       services:
         mlflow:
@@ -1116,11 +2856,15 @@ lessons:
             --port 5000
             --backend-store-uri postgresql://mlflow:secret@postgres:5432/mlflow
             --default-artifact-root s3://ml-artifacts/mlflow
+            --serve-artifacts
           ports:
             - "5000:5000"
           environment:
             AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
             AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+          depends_on:
+            postgres:
+              condition: service_healthy
         postgres:
           image: postgres:16
           environment:
@@ -1129,11 +2873,16 @@ lessons:
             POSTGRES_PASSWORD: secret
           volumes:
             - pgdata:/var/lib/postgresql/data
+          healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U mlflow"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
       volumes:
         pgdata:
       ```
 
-      ## Experiment Tracking
+      ## 3. Experiment Tracking
 
       Integrate MLflow tracking into your training script:
 
@@ -1181,7 +2930,24 @@ lessons:
           mlflow.log_artifact("confusion_matrix.png")
       ```
 
-      ## Model Registry
+      ### Auto-logging
+
+      For supported frameworks, MLflow can auto-log everything:
+
+      ```python
+      import mlflow
+
+      mlflow.pytorch.autolog(
+          log_every_n_step=100,
+          log_models=True,
+          log_datasets=True,
+      )
+
+      # Now just train normally — MLflow captures everything
+      trainer.fit(model, train_loader, val_loader)
+      ```
+
+      ## 4. Model Registry Lifecycle
 
       The Model Registry provides a centralized store with versioning
       and lifecycle stages:
@@ -1190,6 +2956,14 @@ lessons:
       from mlflow.tracking import MlflowClient
 
       client = MlflowClient()
+
+      # Register a new model version
+      result = client.create_model_version(
+          name="bert-classifier",
+          source="runs:/abc123/model",
+          run_id="abc123",
+          description="Fine-tuned on dataset v2.1",
+      )
 
       # Transition model to staging
       client.transition_model_version_stage(
@@ -1212,12 +2986,126 @@ lessons:
       Model lifecycle stages:
 
       ```
-      None → Staging → Production → Archived
-                │                      ↑
-                └──── (if tests fail) ──┘
+      ┌──────┐     ┌──────────┐     ┌────────────┐     ┌──────────┐
+      │ None │────→│ Staging  │────→│ Production │────→│ Archived │
+      └──────┘     └──────────┘     └────────────┘     └──────────┘
+                        │                                    ↑
+                        └──── (if validation fails) ─────────┘
+
+      Promotion Pipeline:
+      1. Train model → register as version N
+      2. Run automated tests (accuracy, latency, bias)
+      3. Promote to Staging → canary deploy (5% traffic)
+      4. Monitor metrics for 24-48 hours
+      5. Promote to Production → full rollout
+      6. Archive previous Production version
       ```
 
-      ## Comparing Experiments
+      ## 5. Data Version Control (DVC)
+
+      DVC tracks large datasets and model files alongside Git:
+
+      ```bash
+      # Initialize DVC in a Git repo
+      cd my-ml-project
+      dvc init
+
+      # Track a large dataset
+      dvc add data/training_data.parquet
+      git add data/training_data.parquet.dvc data/.gitignore
+      git commit -m "Add training data v1"
+
+      # Configure remote storage
+      dvc remote add -d myremote s3://my-bucket/dvc-store
+      dvc push
+
+      # Create a DVC pipeline
+      # dvc.yaml
+      stages:
+        preprocess:
+          cmd: python preprocess.py
+          deps:
+            - preprocess.py
+            - data/raw/
+          outs:
+            - data/processed/
+        train:
+          cmd: python train.py
+          deps:
+            - train.py
+            - data/processed/
+          outs:
+            - models/best_model.pt
+          metrics:
+            - metrics.json:
+                cache: false
+      ```
+
+      ```
+      DVC + Git Workflow:
+      ┌───────────────────────────────────────────────────┐
+      │                Git Repository                      │
+      │  ┌─────────────┐  ┌──────────────┐               │
+      │  │ Code (.py)  │  │ .dvc files   │ (pointers)    │
+      │  │ Configs     │  │ (md5 hashes) │               │
+      │  │ dvc.yaml    │  └──────┬───────┘               │
+      │  └─────────────┘         │                        │
+      └──────────────────────────┼────────────────────────┘
+                                 │
+      ┌──────────────────────────▼────────────────────────┐
+      │              DVC Remote Storage                    │
+      │  ┌──────────────────────────────────────┐         │
+      │  │  S3 / GCS / Azure Blob / SSH         │         │
+      │  │  data/training_data.parquet (50 GB)  │         │
+      │  │  models/best_model.pt (2 GB)         │         │
+      │  └──────────────────────────────────────┘         │
+      └───────────────────────────────────────────────────┘
+      ```
+
+      :::interactive{component="GitVisualizer" config='{"preset":"basics"}'}
+
+      ## 6. A/B Testing and Canary Deployments
+
+      When deploying a new model version, use progressive rollout:
+
+      ```python
+      import random
+
+      class ModelRouter:
+          """Route traffic between model versions for A/B testing."""
+
+          def __init__(self, models, weights):
+              """
+              Args:
+                  models: Dict of version_name -> model
+                  weights: Dict of version_name -> traffic fraction
+              """
+              self.models = models
+              self.weights = weights
+              assert abs(sum(weights.values()) - 1.0) < 1e-6
+
+          def predict(self, input_data, request_id=None):
+              """Route prediction to a model version."""
+              r = random.random()
+              cumulative = 0.0
+              for version, weight in self.weights.items():
+                  cumulative += weight
+                  if r <= cumulative:
+                      result = self.models[version](input_data)
+                      return {
+                          "prediction": result,
+                          "model_version": version,
+                          "request_id": request_id,
+                      }
+
+      # Usage
+      router = ModelRouter(
+          models={"v2_prod": model_v2, "v3_canary": model_v3},
+          weights={"v2_prod": 0.95, "v3_canary": 0.05},
+      )
+      ```
+
+      ## 7. Comparing Experiments
 
       MLflow's UI and API allow systematic comparison:
 
@@ -1234,33 +3122,142 @@ lessons:
                     "metrics.val_f1", "metrics.val_loss"]])
       ```
 
-      ## Reproducibility Checklist
+      ## 8. Reproducibility Checklist
 
       For full reproducibility, log:
       - **Code version**: Git commit hash
       - **Data version**: DVC hash or dataset fingerprint
-      - **Environment**: conda environment export or container digest
-      - **Random seeds**: All seeds (Python, NumPy, PyTorch, CUDA)
+      - **Environment**: conda export or container digest
+      - **Random seeds**: Python, NumPy, PyTorch, CUDA
       - **Hardware**: GPU model, driver version, CUDA version
 
       ```python
       import subprocess
+      import torch
+      import mlflow
 
-      mlflow.log_params({
-          "git_commit": subprocess.check_output(
-              ["git", "rev-parse", "HEAD"]
-          ).decode().strip(),
-          "cuda_version": torch.version.cuda,
-          "gpu_model": torch.cuda.get_device_name(0),
-          "torch_version": torch.__version__,
-          "seed": 42,
-      })
+      def log_reproducibility_info():
+          """Log everything needed to reproduce this run."""
+          mlflow.log_params({
+              "git_commit": subprocess.check_output(
+                  ["git", "rev-parse", "HEAD"]
+              ).decode().strip(),
+              "git_dirty": subprocess.check_output(
+                  ["git", "status", "--porcelain"]
+              ).decode().strip() != "",
+              "cuda_version": torch.version.cuda,
+              "cudnn_version": str(torch.backends.cudnn.version()),
+              "gpu_model": torch.cuda.get_device_name(0),
+              "torch_version": torch.__version__,
+              "python_version": platform.python_version(),
+              "seed": 42,
+          })
+          # Log environment file
+          import subprocess
+          subprocess.run(["pip", "freeze"], capture_output=True)
+          with open("requirements_frozen.txt", "w") as f:
+              f.write(subprocess.check_output(
+                  ["pip", "freeze"]
+              ).decode())
+          mlflow.log_artifact("requirements_frozen.txt")
       ```
 
+      ## 9. Artifact Storage Strategies
+
+      ```
+      Artifact Type      Storage Tier    Retention       Access Pattern
+      ──────────────────────────────────────────────────────────────────
+      Training logs      S3 Standard     90 days         Frequent read
+      Model checkpoints  S3 Standard     30 days         Infrequent
+      Best models        S3 Standard     Permanent       On-demand
+      Datasets           S3 IA           Permanent       Batch read
+      Old experiments    S3 Glacier      1 year          Rare
+      ```
+
+      ## 10. CI/CD for ML Models
+
+      Automating model validation and deployment with CI/CD:
+
+      ```
+      ML CI/CD Pipeline:
+      ┌──────────┐     ┌───────────┐     ┌──────────┐     ┌──────────┐
+      │  Train   │────→│ Validate  │────→│ Register │────→│  Deploy  │
+      │  Model   │     │  & Test   │     │  Model   │     │ (Canary) │
+      └──────────┘     └───────────┘     └──────────┘     └──────────┘
+           │                │                  │                │
+      Log to MLflow   Run test suite     Version in         5% → 100%
+      (params,        (accuracy,         Registry           Progressive
+       metrics,        latency,          (Staging →         rollout
+       artifacts)      bias checks)       Production)
+      ```
+
+      :::interactive{component="PipelineBuilder" config='{"preset":"mlops-full"}'}
+
+      ```python
+      # Example: automated model validation gate
+      def validate_model_for_promotion(model_name, version, thresholds):
+          """Check if a model meets promotion criteria."""
+          client = MlflowClient()
+          mv = client.get_model_version(model_name, version)
+          run = client.get_run(mv.run_id)
+          metrics = run.data.metrics
+
+          checks = {
+              "accuracy": metrics.get("val_accuracy", 0) >= thresholds["min_accuracy"],
+              "latency": metrics.get("inference_p99_ms", 999) <= thresholds["max_latency_ms"],
+              "loss": metrics.get("val_loss", 999) <= thresholds["max_loss"],
+          }
+
+          all_passed = all(checks.values())
+          return {"passed": all_passed, "checks": checks}
+
+      # Usage
+      result = validate_model_for_promotion(
+          "bert-classifier", 3,
+          thresholds={"min_accuracy": 0.92, "max_latency_ms": 50, "max_loss": 0.3}
+      )
+      ```
+
+      ## 11. Model Cards and Documentation
+
+      Every production model should have a **model card** documenting its
+      purpose, training data, performance, limitations, and ethical
+      considerations:
+
+      ```yaml
+      # model_card.yaml
+      model_name: "bert-sentiment-v3"
+      description: "Sentiment analysis model for product reviews"
+      version: 3
+      training:
+        dataset: "product_reviews_v2.1 (500K samples)"
+        hardware: "4x A100 80GB, 2 nodes"
+        duration: "6 hours"
+        hyperparameters:
+          learning_rate: 2e-5
+          batch_size: 32
+          epochs: 3
+      performance:
+        accuracy: 0.934
+        f1_score: 0.921
+        latency_p50: 12ms
+        latency_p99: 45ms
+      limitations:
+        - "Trained only on English text"
+        - "May underperform on reviews shorter than 10 words"
+        - "Not evaluated for sarcasm detection"
+      ethical_considerations:
+        - "Tested for demographic bias across age groups"
+        - "No PII in training data"
+      ```
+
+      :::interactive{component="GuidedLab" config='{"preset":"python-hpc"}'}
+
     exercises:
+      # ---- Exercise 1: Quiz — MLflow Components ----
       - id: "aiml-registry-q1"
         title: "MLflow Components"
-        description: "Which MLflow component provides centralized model storage with version control and lifecycle stage management (None → Staging → Production → Archived)?"
+        description: "Which MLflow component provides centralized model storage with version control and lifecycle stage management (None -> Staging -> Production -> Archived)?"
         exercise_type: "quiz"
         difficulty: 1
         options:
@@ -1272,120 +3269,275 @@ lessons:
         hints:
           - "It's the component that manages model versions and transitions between stages."
           - "Tracking logs experiments; this component manages model lifecycle."
-        solution: "The MLflow Model Registry provides a centralized model store with version control, stage transitions (None → Staging → Production → Archived), annotations, and access control. MLflow Tracking logs experiments (parameters, metrics, artifacts), MLflow Projects packages code for reproducibility, and MLflow Models defines a standard packaging format. The Model Registry builds on top of these to manage the full model lifecycle."
+        solution: "The MLflow Model Registry provides a centralized model store with version control, stage transitions (None -> Staging -> Production -> Archived), annotations, and access control. MLflow Tracking logs experiments (parameters, metrics, artifacts), MLflow Projects packages code for reproducibility, and MLflow Models defines a standard packaging format. The Model Registry builds on top of these to manage the full model lifecycle."
 
+      # ---- Exercise 2: Quiz — DVC Workflow ----
+      - id: "aiml-registry-q2"
+        title: "DVC Data Versioning"
+        description: "When you run `dvc add data/training_data.parquet`, what does DVC create to track this file in Git?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "A copy of the file in the .dvc/cache directory and a .dvc pointer file"
+          - "A compressed archive in the .git/objects directory"
+          - "A symbolic link replacing the original file"
+          - "An entry in .gitmodules pointing to the DVC remote"
+        correct_answer: "A copy of the file in the .dvc/cache directory and a .dvc pointer file"
+        hints:
+          - "DVC creates a small metadata file (pointer) that Git tracks."
+          - "The actual data is stored in DVC's local cache, not in Git."
+          - "The .dvc file contains an MD5 hash that identifies the data version."
+        solution: "When you run `dvc add`, DVC: (1) computes an MD5 hash of the file, (2) copies/moves the file to .dvc/cache/ organized by hash, (3) creates a .dvc pointer file (e.g., training_data.parquet.dvc) containing the hash and file metadata, and (4) adds the original file to .gitignore. Git tracks only the small .dvc file, while the actual data lives in DVC's cache. Running `dvc push` uploads the cached data to a configured remote (S3, GCS, etc.)."
+
+      # ---- Exercise 3: Coding — MLflow Experiment Logger ----
       - id: "aiml-registry-code1"
-        title: "MLflow Experiment Tracking Integration"
-        description: "Write a Python training script that integrates MLflow tracking. Log hyperparameters (learning rate, batch size, epochs), per-epoch metrics (train_loss, val_accuracy), and save the final model with mlflow.pytorch.log_model(). Use the experiment name 'sentiment-analysis'."
+        title: "Experiment Tracking Helper"
+        description: "Write a class `ExperimentLogger` with methods `log_params(params_dict)`, `log_metrics(metrics_dict, step)`, and `get_best_metric(metric_name)`. The class should store all logged parameters and metrics internally. `get_best_metric` should return the maximum value seen for the given metric name across all steps, or None if the metric was never logged."
         exercise_type: "coding"
         difficulty: 2
+        starter_code: |
+          class ExperimentLogger:
+              """Track ML experiment parameters and metrics."""
+
+              def __init__(self, experiment_name, run_name):
+                  self.experiment_name = experiment_name
+                  self.run_name = run_name
+                  self.params = {}
+                  self.metrics = {}  # metric_name -> list of (step, value)
+
+              def log_params(self, params_dict):
+                  """Log hyperparameters."""
+                  # TODO: store params
+                  pass
+
+              def log_metrics(self, metrics_dict, step=0):
+                  """Log metrics at a given step."""
+                  # TODO: store metrics with step
+                  pass
+
+              def get_best_metric(self, metric_name):
+                  """Return the maximum value of the named metric, or None."""
+                  # TODO: find best value
+                  pass
+        test_cases:
+          - input: |
+              logger = ExperimentLogger("test", "run1")
+              logger.log_params({"lr": 0.001, "epochs": 10})
+              print(logger.params["lr"])
+            expected_output: "0.001"
+          - input: |
+              logger = ExperimentLogger("test", "run1")
+              logger.log_metrics({"loss": 1.5, "acc": 0.7}, step=0)
+              logger.log_metrics({"loss": 0.8, "acc": 0.9}, step=1)
+              print(logger.get_best_metric("acc"))
+            expected_output: "0.9"
+          - input: |
+              logger = ExperimentLogger("test", "run1")
+              logger.log_metrics({"loss": 1.5}, step=0)
+              logger.log_metrics({"loss": 0.8}, step=1)
+              logger.log_metrics({"loss": 1.2}, step=2)
+              print(logger.get_best_metric("loss"))
+            expected_output: "1.5"
+          - input: |
+              logger = ExperimentLogger("test", "run1")
+              print(logger.get_best_metric("nonexistent"))
+            expected_output: "None"
         hints:
-          - "Use mlflow.set_experiment() and mlflow.start_run() context manager."
-          - "Log params with mlflow.log_params() and metrics with mlflow.log_metrics()."
-          - "Include the step parameter when logging per-epoch metrics."
+          - "Store metrics as a dict of lists: {'metric_name': [(step, value), ...]}."
+          - "log_params should update the self.params dictionary."
+          - "get_best_metric should return max of all values for that metric."
         solution: |
           ```python
-          import mlflow
-          import mlflow.pytorch
-          import torch
+          class ExperimentLogger:
+              def __init__(self, experiment_name, run_name):
+                  self.experiment_name = experiment_name
+                  self.run_name = run_name
+                  self.params = {}
+                  self.metrics = {}
 
-          mlflow.set_tracking_uri("http://mlflow-server:5000")
-          mlflow.set_experiment("sentiment-analysis")
+              def log_params(self, params_dict):
+                  self.params.update(params_dict)
 
-          # Hyperparameters
-          config = {
-              "learning_rate": 3e-5,
-              "batch_size": 16,
-              "epochs": 5,
-              "model_name": "distilbert-base-uncased",
-              "max_length": 256,
-          }
+              def log_metrics(self, metrics_dict, step=0):
+                  for name, value in metrics_dict.items():
+                      if name not in self.metrics:
+                          self.metrics[name] = []
+                      self.metrics[name].append((step, value))
 
-          with mlflow.start_run(run_name="distilbert-sentiment-v1"):
-              mlflow.log_params(config)
-
-              model = load_model(config["model_name"])
-              optimizer = torch.optim.AdamW(
-                  model.parameters(), lr=config["learning_rate"]
-              )
-
-              for epoch in range(config["epochs"]):
-                  train_loss = train_epoch(model, train_loader, optimizer)
-                  val_acc = evaluate(model, val_loader)
-
-                  mlflow.log_metrics(
-                      {"train_loss": train_loss, "val_accuracy": val_acc},
-                      step=epoch,
-                  )
-                  print(f"Epoch {epoch}: loss={train_loss:.4f} acc={val_acc:.4f}")
-
-              # Save model to registry
-              mlflow.pytorch.log_model(
-                  model,
-                  artifact_path="model",
-                  registered_model_name="sentiment-classifier",
-              )
+              def get_best_metric(self, metric_name):
+                  if metric_name not in self.metrics:
+                      return None
+                  return max(v for _, v in self.metrics[metric_name])
           ```
 
-      - id: "aiml-registry-lab1"
-        title: "MLflow Server Deployment"
-        description: "Write a Docker Compose file that deploys an MLflow tracking server backed by PostgreSQL for metadata and S3 for artifact storage. Include proper environment variables, persistent volumes, and health checks."
-        exercise_type: "lab"
+      # ---- Exercise 4: Coding — Model Version Registry ----
+      - id: "aiml-registry-code2"
+        title: "Model Version Registry"
+        description: "Write a class `ModelRegistry` that manages model versions with lifecycle stages. It should have: `register(name, version, metadata)` to add a model, `promote(name, version, stage)` to change a model's stage (valid stages: 'None', 'Staging', 'Production', 'Archived'), and `get_production_model(name)` to return the metadata of the model in 'Production' stage (or None)."
+        exercise_type: "coding"
         difficulty: 3
+        starter_code: |
+          class ModelRegistry:
+              """Simple model version registry with lifecycle stages."""
+
+              VALID_STAGES = {"None", "Staging", "Production", "Archived"}
+
+              def __init__(self):
+                  self.models = {}  # (name, version) -> {"stage": ..., "metadata": ...}
+
+              def register(self, name, version, metadata=None):
+                  """Register a new model version with stage 'None'."""
+                  # TODO: add model to registry
+                  pass
+
+              def promote(self, name, version, stage):
+                  """Change a model's lifecycle stage. Returns True on success."""
+                  # TODO: validate and update stage
+                  pass
+
+              def get_production_model(self, name):
+                  """Get the model version currently in 'Production' for the given name."""
+                  # TODO: find the production model
+                  pass
+        test_cases:
+          - input: |
+              reg = ModelRegistry()
+              reg.register("bert", 1, {"accuracy": 0.92})
+              print(reg.models[("bert", 1)]["stage"])
+            expected_output: "None"
+          - input: |
+              reg = ModelRegistry()
+              reg.register("bert", 1, {"accuracy": 0.92})
+              reg.promote("bert", 1, "Production")
+              print(reg.get_production_model("bert")["metadata"]["accuracy"])
+            expected_output: "0.92"
+          - input: |
+              reg = ModelRegistry()
+              reg.register("bert", 1)
+              result = reg.promote("bert", 1, "InvalidStage")
+              print(result)
+            expected_output: "False"
+          - input: |
+              reg = ModelRegistry()
+              result = reg.get_production_model("nonexistent")
+              print(result)
+            expected_output: "None"
+          - input: |
+              reg = ModelRegistry()
+              reg.register("bert", 1, {"acc": 0.9})
+              reg.register("bert", 2, {"acc": 0.95})
+              reg.promote("bert", 1, "Production")
+              reg.promote("bert", 2, "Production")
+              r = reg.get_production_model("bert")
+              print(r["version"])
+            expected_output: "2"
         hints:
-          - "MLflow needs --backend-store-uri for PostgreSQL and --default-artifact-root for S3."
-          - "PostgreSQL should have a persistent volume for data."
-          - "Pass AWS credentials as environment variables."
+          - "Use a tuple (name, version) as the dictionary key."
+          - "promote should validate that the stage is in VALID_STAGES."
+          - "get_production_model should iterate through models to find the one with the matching name and 'Production' stage."
         solution: |
-          ```yaml
-          version: "3.9"
-          services:
-            mlflow:
-              image: ghcr.io/mlflow/mlflow:v2.14.0
-              command: >
-                mlflow server
-                --host 0.0.0.0
-                --port 5000
-                --backend-store-uri postgresql://mlflow:${POSTGRES_PASSWORD}@postgres:5432/mlflow
-                --default-artifact-root s3://${S3_BUCKET}/mlflow-artifacts
-                --serve-artifacts
-              ports:
-                - "5000:5000"
-              environment:
-                AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-                AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
-                AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
-              depends_on:
-                postgres:
-                  condition: service_healthy
-              healthcheck:
-                test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-                interval: 30s
-                timeout: 10s
-                retries: 3
+          ```python
+          class ModelRegistry:
+              VALID_STAGES = {"None", "Staging", "Production", "Archived"}
 
-            postgres:
-              image: postgres:16-alpine
-              environment:
-                POSTGRES_DB: mlflow
-                POSTGRES_USER: mlflow
-                POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-              volumes:
-                - pgdata:/var/lib/postgresql/data
-              healthcheck:
-                test: ["CMD-SHELL", "pg_isready -U mlflow"]
-                interval: 10s
-                timeout: 5s
-                retries: 5
+              def __init__(self):
+                  self.models = {}
 
-          volumes:
-            pgdata:
+              def register(self, name, version, metadata=None):
+                  self.models[(name, version)] = {
+                      "name": name,
+                      "version": version,
+                      "stage": "None",
+                      "metadata": metadata or {},
+                  }
+
+              def promote(self, name, version, stage):
+                  if stage not in self.VALID_STAGES:
+                      return False
+                  key = (name, version)
+                  if key not in self.models:
+                      return False
+                  self.models[key]["stage"] = stage
+                  return True
+
+              def get_production_model(self, name):
+                  prod = None
+                  for (n, v), info in self.models.items():
+                      if n == name and info["stage"] == "Production":
+                          if prod is None or v > prod["version"]:
+                              prod = info
+                  return prod
           ```
-          Launch with:
-          ```bash
-          export POSTGRES_PASSWORD=secure-password
-          export S3_BUCKET=my-ml-artifacts
-          export AWS_ACCESS_KEY_ID=...
-          export AWS_SECRET_ACCESS_KEY=...
-          docker compose up -d
+
+      # ---- Exercise 5: Coding — A/B Test Traffic Splitter ----
+      - id: "aiml-registry-code3"
+        title: "A/B Test Traffic Splitter"
+        description: "Write a function `split_traffic(total_requests, model_weights)` that distributes a given number of requests across model versions according to their weights. The `model_weights` is a dict like {'v1': 0.9, 'v2': 0.1}. Return a dict with the same keys, where values are integer counts that sum to `total_requests`. Use deterministic round-robin allocation (largest-remainder method) so results are reproducible."
+        exercise_type: "coding"
+        difficulty: 3
+        starter_code: |
+          def split_traffic(total_requests, model_weights):
+              """
+              Split traffic across model versions using largest-remainder method.
+
+              Args:
+                  total_requests: Total number of requests to distribute.
+                  model_weights: Dict of model_version -> weight (0.0 to 1.0).
+                                 Weights must sum to 1.0.
+
+              Returns:
+                  Dict of model_version -> request count (ints summing to total).
+              """
+              # TODO: implement largest-remainder allocation
+              pass
+        test_cases:
+          - input: |
+              r = split_traffic(100, {"v1": 0.9, "v2": 0.1})
+              print(r["v1"], r["v2"])
+            expected_output: "90 10"
+          - input: |
+              r = split_traffic(10, {"v1": 0.7, "v2": 0.3})
+              print(r["v1"], r["v2"])
+            expected_output: "7 3"
+          - input: |
+              r = split_traffic(100, {"v1": 0.333, "v2": 0.333, "v3": 0.334})
+              print(sum(r.values()))
+            expected_output: "100"
+          - input: |
+              r = split_traffic(10, {"v1": 0.333, "v2": 0.333, "v3": 0.334})
+              print(r["v3"])
+            expected_output: "4"
+          - input: |
+              r = split_traffic(1000, {"a": 0.5, "b": 0.5})
+              print(r["a"], r["b"])
+            expected_output: "500 500"
+        hints:
+          - "Largest-remainder: compute fractional shares, take the floor, then distribute leftover to versions with largest fractional remainders."
+          - "fractional = total * weight; floor_count = int(fractional); remainder = fractional - floor_count"
+          - "Sort by remainder descending, give +1 to the top versions until the total is reached."
+        solution: |
+          ```python
+          def split_traffic(total_requests, model_weights):
+              shares = {}
+              for model, weight in model_weights.items():
+                  exact = total_requests * weight
+                  shares[model] = {
+                      "floor": int(exact),
+                      "remainder": exact - int(exact),
+                  }
+
+              allocated = sum(s["floor"] for s in shares.values())
+              leftover = total_requests - allocated
+
+              # Sort by remainder descending to allocate leftover
+              sorted_models = sorted(
+                  shares.keys(),
+                  key=lambda m: shares[m]["remainder"],
+                  reverse=True,
+              )
+
+              result = {m: shares[m]["floor"] for m in shares}
+              for i in range(leftover):
+                  result[sorted_models[i]] += 1
+              return result
           ```

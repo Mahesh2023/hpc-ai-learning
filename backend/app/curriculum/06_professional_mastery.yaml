@@ -51,6 +51,8 @@ lessons:
         └───────────┘  └───────────┘  └────────────────────────┘
       ```
 
+      :::interactive{component="K8sVisualizer"}
+
       ## Kubernetes Federation Approaches
 
       There are several approaches to federating Kubernetes clusters for HPC workloads:
@@ -114,6 +116,8 @@ lessons:
                 provider: aws
       ```
 
+      :::interactive{component="NetworkTopologyViewer"}
+
       ## Cloud Bursting from On-Prem HPC
 
       Cloud bursting lets on-premises clusters offload jobs to cloud when local capacity is
@@ -162,6 +166,8 @@ lessons:
               return True
           return False
       ```
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
 
       ## Multi-Cloud Strategy
 
@@ -292,6 +298,8 @@ lessons:
                   self._save_checkpoint()
       ```
 
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       **Spot Instance Kubernetes Configuration:**
 
       ```yaml
@@ -357,6 +365,8 @@ lessons:
       < 10%          │  < 10%          │  Severe waste — use MIG or CPU instead
       ```
 
+      :::interactive{component="GPUMemoryVisualizer"}
+
       ## Chargeback & Showback Models
 
       Shared GPU platforms need transparent cost attribution. Implement chargeback using
@@ -398,6 +408,8 @@ lessons:
 
           return {"team": team, "period_days": days, "total_cost": round(total_cost, 2), "breakdown": breakdown}
       ```
+
+      :::interactive{component="GuidedLab"}
 
       ## Total Cost of Ownership (TCO) Analysis
 
@@ -575,6 +587,8 @@ lessons:
         apiGroup: rbac.authorization.k8s.io
       ```
 
+      :::interactive{component="K8sVisualizer"}
+
       ## Network Policies
 
       Training jobs often need access to data stores but should not reach other teams'
@@ -626,6 +640,8 @@ lessons:
           # Block all public internet access
       ```
 
+      :::interactive{component="NetworkTopologyViewer"}
+
       ## Secrets Management
 
       Never store credentials in ConfigMaps, environment variables in pod specs, or container
@@ -656,6 +672,8 @@ lessons:
               key: secret/data/ml-platform/s3
               property: secret_access_key
       ```
+
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
 
       ## Container Image Security
 
@@ -732,6 +750,8 @@ lessons:
               resources: ["configmaps"]
               resourceNames: ["kube-root-ca.crt"]
       ```
+
+      :::interactive{component="GuidedLab"}
 
     exercises:
       - id: "prof-mastery-security-q1"
@@ -834,6 +854,8 @@ lessons:
       export NCCL_P2P_LEVEL=NVL                 # P2P via NVLink when available
       ```
 
+      :::interactive{component="TerminalSimulator" config='{"mode":"linux"}'}
+
       The `NCCL_ALGO` variable is particularly important. For small messages, the **Tree**
       algorithm achieves lower latency (O(log N) steps). For large tensors (gradient
       all-reduce), the **Ring** algorithm achieves optimal bandwidth utilization. NCCL
@@ -872,6 +894,8 @@ lessons:
       Without GPUDirect:     GPU ──► CPU RAM ──► NIC ──► Network ──► NIC ──► CPU RAM ──► GPU
       With GPUDirect RDMA:   GPU ──────────────► NIC ──► Network ──► NIC ──────────────► GPU
       ```
+
+      :::interactive{component="NetworkTopologyViewer"}
 
       ## Topology-Aware Scheduling
 
@@ -928,6 +952,8 @@ lessons:
                         value: "/var/run/nvidia/nccl-topo.xml"
       ```
 
+      :::interactive{component="K8sVisualizer"}
+
       ## Mixed Precision & Flash Attention
 
       Compute efficiency is as important as communication efficiency:
@@ -971,6 +997,8 @@ lessons:
       **Flash Attention** reduces memory from O(N²) to O(N) and avoids materializing the full
       attention matrix. On a 4096-token sequence with 32 heads, this saves ~2GB of activation
       memory per layer and provides 2-4x wall-clock speedup.
+
+      :::interactive{component="GPUMemoryVisualizer"}
 
       **Performance Profiling Workflow:**
 
@@ -1165,6 +1193,8 @@ lessons:
       └─────────────────────────────────────────────────────────────────────┘
       ```
 
+      :::interactive{component="PipelineBuilder" config='{"preset":"mlops-full"}'}
+
       ## Capacity Planning
 
       GPU capacity planning must account for multiple workload types with different resource
@@ -1229,6 +1259,8 @@ lessons:
       # recommended ≈ 272 GPUs (34 nodes × 8 GPUs)
       ```
 
+      :::interactive{component="K8sVisualizer"}
+
       ## Disaster Recovery for ML Platforms
 
       ML platform DR differs from traditional application DR because of the unique assets:
@@ -1252,6 +1284,8 @@ lessons:
       3     │  Training Data       │  24 hours │  48 hours  │  Async replication
       4     │  Dev Environments    │  7 days   │  24 hours  │  GitOps rebuild
       ```
+
+      :::interactive{component="GuidedLab"}
 
       ## Case Studies
 
