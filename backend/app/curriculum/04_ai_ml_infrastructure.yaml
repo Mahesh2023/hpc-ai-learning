@@ -1,0 +1,1391 @@
+id: "ai-ml-infrastructure"
+title: "AI/ML Infrastructure"
+description: "Build and manage production AI/ML infrastructure including GPU computing, distributed training frameworks, data pipelines, and model lifecycle management."
+level: "intermediate"
+order: 4
+estimated_hours: 16
+prerequisites: ["containers-orchestration"]
+skills: ["AI/ML", "Cloud"]
+lessons:
+  # ---------------------------------------------------------------------------
+  # LESSON 1 — GPU Computing & CUDA Basics
+  # ---------------------------------------------------------------------------
+  - id: "gpu-computing-cuda"
+    title: "GPU Computing & CUDA Basics"
+    order: 1
+    objectives:
+      - "Compare GPU and CPU architectures and their suitability for ML workloads"
+      - "Understand the CUDA programming model: grids, blocks, and threads"
+      - "Describe GPU memory hierarchy and its impact on performance"
+      - "Explain mixed-precision training and its benefits"
+    content_md: |
+      # GPU Computing & CUDA Basics
+
+      ## GPU vs CPU Architecture
+
+      CPUs are optimized for **latency** — a few powerful cores that excel at
+      sequential tasks. GPUs are optimized for **throughput** — thousands of
+      simpler cores that process data in parallel.
+
+      ```
+      CPU (e.g., AMD EPYC 9654)          GPU (e.g., NVIDIA H100 SXM)
+      ┌─────────────────────────┐        ┌─────────────────────────────┐
+      │ 96 cores @ 2.4 GHz     │        │ 16,896 CUDA cores @ 1.8 GHz│
+      │ 384 MB L3 cache        │        │ 528 Tensor Cores (4th gen)  │
+      │ 12-ch DDR5 (460 GB/s)  │        │ 80 GB HBM3 (3.35 TB/s)     │
+      │ ~4 TFLOPS FP32         │        │ ~990 TFLOPS FP16 (Tensor)   │
+      └─────────────────────────┘        └─────────────────────────────┘
+      ```
+
+      The H100 delivers ~250× the floating-point throughput of a high-end CPU.
+      This is why matrix multiplications — the core of neural networks — are
+      dramatically faster on GPUs.
+
+      ## The CUDA Programming Model
+
+      CUDA (Compute Unified Device Architecture) is NVIDIA's parallel
+      computing platform. The programming model is hierarchical:
+
+      ```
+      Grid
+      ├── Block (0,0)    Block (0,1)    Block (0,2)
+      │   ├── Thread 0   ├── Thread 0   ├── Thread 0
+      │   ├── Thread 1   ├── Thread 1   ├── Thread 1
+      │   ├── ...        ├── ...        ├── ...
+      │   └── Thread 255 └── Thread 255 └── Thread 255
+      ├── Block (1,0)    Block (1,1)    Block (1,2)
+      │   └── ...        └── ...        └── ...
+      ```
+
+      A simple CUDA kernel for vector addition:
+
+      ```cuda
+      __global__ void vectorAdd(float *a, float *b, float *c, int n) {
+          int idx = blockIdx.x * blockDim.x + threadIdx.x;
+          if (idx < n) {
+              c[idx] = a[idx] + b[idx];
+          }
+      }
+
+      // Launch with 256 threads per block
+      int threadsPerBlock = 256;
+      int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
+      vectorAdd<<<blocksPerGrid, threadsPerBlock>>>(d_a, d_b, d_c, n);
+      ```
+
+      As ML practitioners, you rarely write raw CUDA. Instead, frameworks like
+      PyTorch and TensorFlow call cuBLAS, cuDNN, and cuFFT under the hood.
+
+      ## GPU Memory Hierarchy
+
+      Understanding memory hierarchy is critical for performance:
+
+      | Memory Type       | Size     | Bandwidth    | Latency    | Scope        |
+      |-------------------|----------|-------------|------------|--------------|
+      | Registers         | 256 KB/SM| ~20 TB/s    | 1 cycle    | Per thread   |
+      | Shared Memory     | 228 KB/SM| ~19 TB/s    | ~20 cycles | Per block    |
+      | L2 Cache          | 50 MB    | ~12 TB/s    | ~200 cycles| All SMs      |
+      | HBM3 (Global)     | 80 GB    | 3.35 TB/s   | ~400 cycles| All SMs      |
+      | CPU RAM (via PCIe)| TBs      | 64 GB/s     | ~10K cycles| Host ↔ Device|
+
+      The key bottleneck is **CPU↔GPU data transfer** over PCIe — 50× slower
+      than HBM. Minimize transfers by keeping data on the GPU.
+
+      ```python
+      import torch
+
+      # BAD: repeated CPU↔GPU transfers
+      for batch in dataloader:
+          x = batch.to('cuda')          # PCIe transfer each iteration
+          output = model(x)
+          loss = output.to('cpu').item() # Another transfer
+
+      # GOOD: pin memory and use non_blocking transfers
+      dataloader = DataLoader(dataset, pin_memory=True, num_workers=4)
+      for batch in dataloader:
+          x = batch.to('cuda', non_blocking=True)  # Async DMA transfer
+          output = model(x)
+      ```
+
+      ## cuDNN and Kernel Auto-tuning
+
+      cuDNN provides optimized implementations of convolutions, attention,
+      normalization, and other neural network operations. Enable benchmarking
+      to auto-select the fastest kernel:
+
+      ```python
+      torch.backends.cudnn.benchmark = True   # Auto-tune convolution kernels
+      torch.backends.cudnn.deterministic = False  # Allow non-deterministic algos
+      ```
+
+      ## Mixed Precision Training
+
+      Modern GPUs have dedicated **Tensor Cores** that perform matrix
+      multiplications in FP16/BF16 at 2–8× the speed of FP32:
+
+      ```python
+      from torch.cuda.amp import autocast, GradScaler
+
+      scaler = GradScaler()
+      for batch in dataloader:
+          optimizer.zero_grad()
+          with autocast(dtype=torch.bfloat16):
+              output = model(batch['input_ids'].cuda())
+              loss = criterion(output, batch['labels'].cuda())
+          scaler.scale(loss).backward()
+          scaler.step(optimizer)
+          scaler.update()
+      ```
+
+      **BF16 vs FP16:**
+      - FP16: 5-bit exponent, 10-bit mantissa — higher precision, smaller range
+      - BF16: 8-bit exponent, 7-bit mantissa — same range as FP32, less precision
+      - BF16 rarely needs loss scaling; FP16 requires `GradScaler` to avoid underflow
+
+      On H100 GPUs, BF16 Tensor Core operations deliver ~990 TFLOPS vs
+      ~67 TFLOPS for FP32 CUDA cores — a **15× speedup**.
+
+    exercises:
+      - id: "aiml-gpu-q1"
+        title: "GPU Memory Bottleneck"
+        description: "What is typically the biggest memory bandwidth bottleneck when training neural networks on GPUs?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "GPU register file access"
+          - "L2 cache to shared memory transfer"
+          - "CPU-to-GPU data transfer over PCIe"
+          - "HBM3 global memory bandwidth"
+        correct_answer: "CPU-to-GPU data transfer over PCIe"
+        hints:
+          - "Compare the bandwidth numbers: PCIe 5.0 x16 gives ~64 GB/s while HBM3 gives ~3.35 TB/s."
+          - "Think about what happens every time you call tensor.to('cuda')."
+        solution: "The PCIe bus connecting CPU and GPU is the biggest bottleneck at ~64 GB/s (PCIe 5.0 x16), which is roughly 50× slower than HBM3 bandwidth (3.35 TB/s). This is why best practices include using pinned memory, non-blocking transfers, multiple data loading workers, and keeping data on the GPU as long as possible. NVLink between GPUs provides 900 GB/s, which is also much faster than PCIe."
+
+      - id: "aiml-gpu-code1"
+        title: "Mixed Precision Training Loop"
+        description: "Write a PyTorch training loop that uses automatic mixed precision (AMP) with BF16 and GradScaler. Include a forward pass, loss computation, backward pass, and optimizer step for a model and optimizer that are already defined."
+        exercise_type: "coding"
+        difficulty: 3
+        hints:
+          - "Use torch.cuda.amp.autocast with dtype=torch.bfloat16."
+          - "GradScaler wraps the loss scaling and optimizer step."
+          - "Call scaler.scale(loss).backward() instead of loss.backward()."
+        solution: |
+          ```python
+          from torch.cuda.amp import autocast, GradScaler
+
+          scaler = GradScaler()
+          model.train()
+
+          for epoch in range(num_epochs):
+              for batch in dataloader:
+                  inputs = batch['input'].to('cuda', non_blocking=True)
+                  labels = batch['label'].to('cuda', non_blocking=True)
+
+                  optimizer.zero_grad(set_to_none=True)
+
+                  with autocast(dtype=torch.bfloat16):
+                      outputs = model(inputs)
+                      loss = criterion(outputs, labels)
+
+                  scaler.scale(loss).backward()
+                  scaler.step(optimizer)
+                  scaler.update()
+          ```
+          Using `set_to_none=True` in zero_grad is a minor optimization
+          that avoids a memset to zero, instead setting gradients to None.
+
+      - id: "aiml-gpu-lab1"
+        title: "GPU Memory Profiling"
+        description: "Write a Python script that profiles GPU memory allocation during model loading and inference. Use torch.cuda.memory_allocated(), torch.cuda.max_memory_allocated(), and torch.cuda.memory_summary() to track memory at each stage: (1) empty GPU, (2) after loading model, (3) after a forward pass."
+        exercise_type: "lab"
+        difficulty: 3
+        hints:
+          - "Call torch.cuda.reset_peak_memory_stats() at the start."
+          - "Use torch.cuda.memory_allocated() to get current usage in bytes."
+          - "Convert bytes to GB by dividing by 1024**3."
+        solution: |
+          ```python
+          import torch
+          from torchvision.models import resnet50
+
+          def print_mem(stage):
+              allocated = torch.cuda.memory_allocated() / 1024**3
+              peak = torch.cuda.max_memory_allocated() / 1024**3
+              print(f"[{stage}] Allocated: {allocated:.2f} GB | Peak: {peak:.2f} GB")
+
+          torch.cuda.reset_peak_memory_stats()
+          print_mem("Empty GPU")
+
+          model = resnet50().cuda()
+          print_mem("Model loaded")
+
+          dummy_input = torch.randn(32, 3, 224, 224, device='cuda')
+          with torch.no_grad():
+              output = model(dummy_input)
+          print_mem("After inference")
+
+          print(torch.cuda.memory_summary(abbreviated=True))
+          ```
+          Expected output (approximate for ResNet-50):
+          - Model loaded: ~0.10 GB
+          - After inference with batch 32: ~0.85 GB peak
+
+  # ---------------------------------------------------------------------------
+  # LESSON 2 — ML Framework Deployment
+  # ---------------------------------------------------------------------------
+  - id: "ml-framework-deployment"
+    title: "ML Framework Deployment"
+    order: 2
+    objectives:
+      - "Install PyTorch and TensorFlow on HPC systems with GPU support"
+      - "Configure NCCL for multi-GPU and multi-node communication"
+      - "Manage Python environments with conda and pip on shared clusters"
+      - "Use NVIDIA NGC containers for pre-built ML environments"
+    content_md: |
+      # ML Framework Deployment
+
+      ## Installing PyTorch on HPC
+
+      HPC systems require careful attention to CUDA driver compatibility,
+      interconnect libraries, and shared filesystem performance. There are
+      three main approaches:
+
+      ### Option 1: Conda Environment
+
+      ```bash
+      # Create isolated environment
+      module load cuda/12.2 cudnn/8.9
+      conda create -n pytorch-env python=3.11
+      conda activate pytorch-env
+
+      # Install PyTorch with CUDA 12.1 support
+      pip install torch torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/cu121
+
+      # Verify installation
+      python -c "
+      import torch
+      print(f'PyTorch: {torch.__version__}')
+      print(f'CUDA available: {torch.cuda.is_available()}')
+      print(f'CUDA version: {torch.version.cuda}')
+      print(f'cuDNN version: {torch.backends.cudnn.version()}')
+      print(f'GPU count: {torch.cuda.device_count()}')
+      for i in range(torch.cuda.device_count()):
+          print(f'  GPU {i}: {torch.cuda.get_device_name(i)}')
+      "
+      ```
+
+      ### Option 2: NGC Containers (Recommended for HPC)
+
+      NVIDIA NGC containers come pre-built with optimized versions of
+      PyTorch, NCCL, cuDNN, CUDA, and communication libraries:
+
+      ```bash
+      # Pull the container
+      apptainer pull pytorch-24.01.sif \
+        docker://nvcr.io/nvidia/pytorch:24.01-py3
+
+      # Run interactively
+      apptainer exec --nv pytorch-24.01.sif python -c "
+      import torch; print(torch.__version__)
+      "
+      ```
+
+      NGC containers include:
+      - PyTorch compiled with the latest CUDA toolkit
+      - NCCL optimized for InfiniBand and NVLink
+      - Nsight profiling tools
+      - DALI for GPU-accelerated data loading
+
+      ### Option 3: pip in a Virtual Environment
+
+      ```bash
+      module load cuda/12.2
+      python -m venv ~/venvs/ml-env
+      source ~/venvs/ml-env/bin/activate
+      pip install torch --index-url https://download.pytorch.org/whl/cu121
+      ```
+
+      **Warning**: On shared filesystems (Lustre, GPFS), conda environments
+      with thousands of small files can be slow. Prefer containers or install
+      to local SSD (`/tmp` or `/scratch`):
+
+      ```bash
+      conda create -p /scratch/$USER/envs/pytorch python=3.11
+      ```
+
+      ## NCCL Configuration
+
+      NCCL (NVIDIA Collective Communications Library) handles all-reduce,
+      broadcast, and other collective operations for multi-GPU training.
+
+      Key environment variables:
+
+      | Variable              | Description                       | Recommended Value     |
+      |-----------------------|-----------------------------------|-----------------------|
+      | NCCL_DEBUG            | Logging verbosity                 | INFO (debug), WARN    |
+      | NCCL_IB_DISABLE       | Disable InfiniBand               | 0 (enable IB)         |
+      | NCCL_IB_HCA           | InfiniBand HCA devices           | mlx5 (Mellanox)       |
+      | NCCL_SOCKET_IFNAME    | Network interface for TCP fallback| eth0, eno1            |
+      | NCCL_P2P_LEVEL        | Peer-to-peer GPU comm level      | NVL (NVLink)          |
+      | NCCL_NET_GDR_LEVEL    | GPUDirect RDMA level             | 5 (max)               |
+
+      ```bash
+      # Typical SLURM job configuration for multi-node training
+      export NCCL_DEBUG=INFO
+      export NCCL_IB_DISABLE=0
+      export NCCL_IB_HCA=mlx5
+      export NCCL_SOCKET_IFNAME=eno1
+      export NCCL_P2P_LEVEL=NVL
+
+      srun torchrun \
+        --nproc_per_node=8 \
+        --nnodes=$SLURM_NNODES \
+        --node_rank=$SLURM_NODEID \
+        --master_addr=$(scontrol show hostname $SLURM_JOB_NODELIST | head -n1) \
+        --master_port=29500 \
+        train.py
+      ```
+
+      ## Environment Management Best Practices
+
+      ```
+      Approach         Pros                         Cons
+      ─────────────────────────────────────────────────────────────
+      Conda            Easy, wide package support   Slow on shared FS
+      pip + venv       Lightweight, fast             Missing system libs
+      NGC Container    Optimized, reproducible      Large image size
+      Spack            HPC-native, builds from src  Complex configuration
+      ```
+
+      For production workloads, **NGC containers** are strongly recommended
+      because they guarantee a tested, optimized software stack. For
+      development, use conda with `--prefix` on a fast filesystem.
+
+    exercises:
+      - id: "aiml-framework-q1"
+        title: "NCCL Configuration"
+        description: "Which NCCL environment variable should be set to 0 to ensure InfiniBand is used for multi-node GPU communication?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "NCCL_DEBUG"
+          - "NCCL_IB_DISABLE"
+          - "NCCL_SOCKET_IFNAME"
+          - "NCCL_P2P_LEVEL"
+        correct_answer: "NCCL_IB_DISABLE"
+        hints:
+          - "The variable name hints at what it controls."
+          - "Setting it to 0 means 'do not disable', effectively enabling InfiniBand."
+        solution: "NCCL_IB_DISABLE=0 ensures InfiniBand is NOT disabled, allowing NCCL to use IB for high-bandwidth, low-latency inter-node communication. InfiniBand provides ~200-400 Gb/s per port, which is crucial for distributed training where gradient synchronization is the bottleneck. Setting it to 1 would force NCCL to fall back to TCP sockets, which is significantly slower."
+
+      - id: "aiml-framework-code1"
+        title: "PyTorch GPU Verification Script"
+        description: "Write a comprehensive Python script that verifies a PyTorch installation is correctly configured for GPU training. It should check: CUDA availability, CUDA version, cuDNN version, GPU count, each GPU's name and memory, NCCL availability, and run a small tensor operation on GPU to confirm functionality."
+        exercise_type: "coding"
+        difficulty: 2
+        hints:
+          - "Use torch.cuda.get_device_properties(i) for detailed GPU info."
+          - "torch.distributed.is_nccl_available() checks NCCL support."
+          - "Test with a small matmul on GPU to verify compute works."
+        solution: |
+          ```python
+          import torch
+          import sys
+
+          print(f"Python: {sys.version}")
+          print(f"PyTorch: {torch.__version__}")
+          print(f"CUDA available: {torch.cuda.is_available()}")
+
+          if torch.cuda.is_available():
+              print(f"CUDA version: {torch.version.cuda}")
+              print(f"cuDNN version: {torch.backends.cudnn.version()}")
+              print(f"GPU count: {torch.cuda.device_count()}")
+
+              for i in range(torch.cuda.device_count()):
+                  props = torch.cuda.get_device_properties(i)
+                  mem_gb = props.total_memory / 1024**3
+                  print(f"  GPU {i}: {props.name} ({mem_gb:.1f} GB)")
+                  print(f"    Compute capability: {props.major}.{props.minor}")
+                  print(f"    SMs: {props.multi_processor_count}")
+
+              print(f"NCCL available: {torch.distributed.is_nccl_available()}")
+
+              # Functional test
+              a = torch.randn(1000, 1000, device='cuda')
+              b = torch.randn(1000, 1000, device='cuda')
+              c = torch.matmul(a, b)
+              print(f"GPU compute test: PASSED (result shape: {c.shape})")
+          else:
+              print("WARNING: No GPU available!")
+          ```
+
+      - id: "aiml-framework-lab1"
+        title: "HPC Environment Setup Script"
+        description: "Write a bash script for an HPC cluster that: (1) loads the required CUDA and cuDNN modules, (2) creates a conda environment on the scratch filesystem, (3) installs PyTorch with CUDA 12.1 support, (4) installs common ML libraries (transformers, datasets, accelerate, wandb), and (5) verifies the installation by running the GPU check."
+        exercise_type: "lab"
+        difficulty: 3
+        hints:
+          - "Use conda create --prefix for the scratch filesystem path."
+          - "Use pip with --index-url for the PyTorch CUDA wheels."
+          - "Run the verification as the final step."
+        solution: |
+          ```bash
+          #!/bin/bash
+          set -euo pipefail
+
+          echo "=== Loading modules ==="
+          module load cuda/12.2 cudnn/8.9 anaconda3
+
+          ENV_PATH="/scratch/$USER/envs/ml-training"
+
+          echo "=== Creating conda environment ==="
+          conda create -y --prefix "$ENV_PATH" python=3.11
+          conda activate "$ENV_PATH"
+
+          echo "=== Installing PyTorch ==="
+          pip install torch torchvision torchaudio \
+            --index-url https://download.pytorch.org/whl/cu121
+
+          echo "=== Installing ML libraries ==="
+          pip install transformers datasets accelerate wandb \
+            deepspeed scipy sentencepiece protobuf
+
+          echo "=== Verifying installation ==="
+          python -c "
+          import torch
+          assert torch.cuda.is_available(), 'CUDA not available!'
+          print(f'PyTorch {torch.__version__} with CUDA {torch.version.cuda}')
+          print(f'GPUs: {torch.cuda.device_count()}')
+          x = torch.randn(100, 100, device='cuda')
+          print('GPU compute: OK')
+          "
+
+          echo "=== Setup complete ==="
+          echo "Activate with: conda activate $ENV_PATH"
+          ```
+
+  # ---------------------------------------------------------------------------
+  # LESSON 3 — Distributed Training
+  # ---------------------------------------------------------------------------
+  - id: "distributed-training"
+    title: "Distributed Training"
+    order: 3
+    objectives:
+      - "Distinguish data parallelism, model parallelism, and pipeline parallelism"
+      - "Implement distributed data parallel training with PyTorch DDP"
+      - "Configure DeepSpeed ZeRO stages for memory-efficient training"
+      - "Use PyTorch FSDP for large model training"
+    content_md: |
+      # Distributed Training
+
+      ## Why Distribute?
+
+      Training large models on a single GPU is often impossible or
+      impractically slow. GPT-3 (175B parameters) requires ~350 GB in FP16
+      — far exceeding any single GPU's memory. Distributed training splits
+      the work across multiple GPUs and nodes.
+
+      ## Parallelism Strategies
+
+      ```
+      ┌─────────────────────────────────────────────────────────┐
+      │                  Parallelism Strategies                 │
+      ├──────────────┬──────────────────┬───────────────────────┤
+      │  Data         │  Model           │  Pipeline             │
+      │  Parallelism  │  Parallelism     │  Parallelism          │
+      ├──────────────┼──────────────────┼───────────────────────┤
+      │ Same model    │ Model split      │ Model split into      │
+      │ on each GPU,  │ across GPUs      │ sequential stages     │
+      │ different data│ (tensor/layer)   │ with micro-batches    │
+      ├──────────────┼──────────────────┼───────────────────────┤
+      │ GPU0: batch0  │ GPU0: layers 0-11│ GPU0: Stage1 → →     │
+      │ GPU1: batch1  │ GPU1: layers12-23│ GPU1:    Stage2 → →  │
+      │ GPU2: batch2  │ GPU2: layers24-35│ GPU2:       Stage3→→ │
+      │ GPU3: batch3  │ GPU3: layers36-47│                       │
+      └──────────────┴──────────────────┴───────────────────────┘
+      ```
+
+      ## Data Parallelism with PyTorch DDP
+
+      **DistributedDataParallel (DDP)** replicates the model on each GPU
+      and synchronizes gradients via all-reduce after each backward pass:
+
+      ```python
+      import torch
+      import torch.distributed as dist
+      from torch.nn.parallel import DistributedDataParallel as DDP
+      from torch.utils.data.distributed import DistributedSampler
+
+      def setup(rank, world_size):
+          dist.init_process_group("nccl", rank=rank, world_size=world_size)
+          torch.cuda.set_device(rank)
+
+      def train(rank, world_size):
+          setup(rank, world_size)
+
+          model = MyModel().to(rank)
+          model = DDP(model, device_ids=[rank])
+
+          sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank)
+          dataloader = DataLoader(dataset, batch_size=64, sampler=sampler)
+
+          optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+
+          for epoch in range(100):
+              sampler.set_epoch(epoch)  # Shuffle differently each epoch
+              for batch in dataloader:
+                  optimizer.zero_grad()
+                  loss = model(batch.to(rank)).loss
+                  loss.backward()        # Gradients all-reduced automatically
+                  optimizer.step()
+
+          dist.destroy_process_group()
+      ```
+
+      Launch with `torchrun`:
+
+      ```bash
+      torchrun --nproc_per_node=4 --nnodes=2 \
+        --node_rank=0 --master_addr=node01 --master_port=29500 \
+        train.py
+      ```
+
+      ## DeepSpeed ZeRO
+
+      DeepSpeed's **ZeRO (Zero Redundancy Optimizer)** partitions optimizer
+      states, gradients, and parameters across GPUs to dramatically reduce
+      memory per GPU:
+
+      | ZeRO Stage | What's Partitioned         | Memory Savings |
+      |------------|----------------------------|----------------|
+      | Stage 1    | Optimizer states           | 4×             |
+      | Stage 2    | + Gradients                | 8×             |
+      | Stage 3    | + Parameters               | Linear w/ GPUs |
+
+      DeepSpeed configuration (`ds_config.json`):
+
+      ```json
+      {
+        "bf16": {"enabled": true},
+        "zero_optimization": {
+          "stage": 2,
+          "overlap_comm": true,
+          "contiguous_gradients": true,
+          "reduce_bucket_size": 5e8
+        },
+        "gradient_accumulation_steps": 4,
+        "train_micro_batch_size_per_gpu": 8,
+        "gradient_clipping": 1.0,
+        "optimizer": {
+          "type": "AdamW",
+          "params": {
+            "lr": 1e-4,
+            "betas": [0.9, 0.95],
+            "weight_decay": 0.1
+          }
+        }
+      }
+      ```
+
+      Initialize with DeepSpeed:
+
+      ```python
+      import deepspeed
+
+      model, optimizer, _, scheduler = deepspeed.initialize(
+          model=model,
+          config="ds_config.json",
+          model_parameters=model.parameters()
+      )
+      ```
+
+      ## PyTorch FSDP
+
+      **Fully Sharded Data Parallel (FSDP)** is PyTorch's native equivalent
+      to ZeRO Stage 3. It shards parameters, gradients, and optimizer states:
+
+      ```python
+      from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+      from torch.distributed.fsdp import MixedPrecision
+
+      bf16_policy = MixedPrecision(
+          param_dtype=torch.bfloat16,
+          reduce_dtype=torch.bfloat16,
+          buffer_dtype=torch.bfloat16,
+      )
+
+      model = FSDP(
+          model,
+          mixed_precision=bf16_policy,
+          use_orig_params=True,
+          limit_all_gathers=True,
+      )
+      ```
+
+      ## Choosing a Strategy
+
+      | Model Size  | GPUs  | Recommended Strategy           |
+      |-------------|-------|--------------------------------|
+      | < 1B params | 1–8   | DDP                            |
+      | 1–10B       | 8–64  | FSDP or DeepSpeed ZeRO-2      |
+      | 10–100B     | 64+   | DeepSpeed ZeRO-3 + Pipeline    |
+      | 100B+       | 256+  | 3D parallelism (Megatron-LM)  |
+
+    exercises:
+      - id: "aiml-dist-q1"
+        title: "DeepSpeed ZeRO Stages"
+        description: "In DeepSpeed ZeRO, what additional component is partitioned in Stage 2 compared to Stage 1?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "Model parameters"
+          - "Gradients"
+          - "Activation checkpoints"
+          - "Input data batches"
+        correct_answer: "Gradients"
+        hints:
+          - "Stage 1 partitions optimizer states. Stage 2 adds one more component."
+          - "Stage 3 adds parameters on top of what Stage 2 partitions."
+        solution: "DeepSpeed ZeRO Stage 1 partitions optimizer states (e.g., Adam's momentum and variance) across GPUs. Stage 2 additionally partitions the gradients, reducing per-GPU memory by ~8× compared to standard DDP. Stage 3 goes further by also partitioning the model parameters, enabling training of models that don't fit in a single GPU's memory at all."
+
+      - id: "aiml-dist-code1"
+        title: "PyTorch DDP Training Script"
+        description: "Write a complete PyTorch DDP training function that initializes the process group, wraps a model with DDP, creates a DistributedSampler, and runs a training loop. The function should take rank and world_size as arguments."
+        exercise_type: "coding"
+        difficulty: 3
+        hints:
+          - "Use dist.init_process_group('nccl', rank=rank, world_size=world_size)."
+          - "Don't forget to call sampler.set_epoch(epoch) for proper shuffling."
+          - "Clean up with dist.destroy_process_group() at the end."
+        solution: |
+          ```python
+          import torch
+          import torch.distributed as dist
+          from torch.nn.parallel import DistributedDataParallel as DDP
+          from torch.utils.data import DataLoader
+          from torch.utils.data.distributed import DistributedSampler
+
+          def train(rank, world_size, dataset, model_cls):
+              # Initialize process group
+              dist.init_process_group(
+                  backend="nccl", rank=rank, world_size=world_size
+              )
+              torch.cuda.set_device(rank)
+
+              # Create model and wrap with DDP
+              model = model_cls().to(rank)
+              model = DDP(model, device_ids=[rank])
+
+              # Distributed sampler ensures each GPU gets unique data
+              sampler = DistributedSampler(
+                  dataset, num_replicas=world_size, rank=rank
+              )
+              dataloader = DataLoader(
+                  dataset, batch_size=32, sampler=sampler, num_workers=4
+              )
+
+              optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+
+              for epoch in range(10):
+                  sampler.set_epoch(epoch)
+                  model.train()
+                  for batch in dataloader:
+                      inputs = batch['input'].to(rank)
+                      labels = batch['label'].to(rank)
+                      optimizer.zero_grad(set_to_none=True)
+                      loss = model(inputs, labels).loss
+                      loss.backward()
+                      optimizer.step()
+
+                  if rank == 0:
+                      print(f"Epoch {epoch} complete")
+
+              dist.destroy_process_group()
+          ```
+
+      - id: "aiml-dist-code2"
+        title: "DeepSpeed Configuration"
+        description: "Write a DeepSpeed JSON configuration file for training a 7B parameter model on 8 GPUs with ZeRO Stage 2, BF16 mixed precision, gradient accumulation of 4 steps, micro batch size of 2, and AdamW optimizer with learning rate 2e-5."
+        exercise_type: "coding"
+        difficulty: 3
+        hints:
+          - "ZeRO Stage 2 partitions optimizer states and gradients."
+          - "Enable overlap_comm for better throughput."
+          - "Use bf16.enabled instead of fp16 for BF16 training."
+        solution: |
+          ```json
+          {
+            "bf16": {
+              "enabled": true
+            },
+            "zero_optimization": {
+              "stage": 2,
+              "overlap_comm": true,
+              "contiguous_gradients": true,
+              "reduce_bucket_size": 5e8,
+              "allgather_bucket_size": 5e8
+            },
+            "gradient_accumulation_steps": 4,
+            "train_micro_batch_size_per_gpu": 2,
+            "gradient_clipping": 1.0,
+            "optimizer": {
+              "type": "AdamW",
+              "params": {
+                "lr": 2e-5,
+                "betas": [0.9, 0.95],
+                "eps": 1e-8,
+                "weight_decay": 0.1
+              }
+            },
+            "scheduler": {
+              "type": "WarmupDecayLR",
+              "params": {
+                "warmup_min_lr": 0,
+                "warmup_max_lr": 2e-5,
+                "warmup_num_steps": 100,
+                "total_num_steps": 10000
+              }
+            },
+            "steps_per_print": 10,
+            "wall_clock_breakdown": false
+          }
+          ```
+
+      - id: "aiml-dist-lab1"
+        title: "Multi-Node Training SLURM Script"
+        description: "Write a SLURM batch script that runs a multi-node PyTorch training job across 4 nodes with 8 GPUs each (32 GPUs total). Include proper NCCL configuration, torchrun launch, and environment setup."
+        exercise_type: "lab"
+        difficulty: 4
+        hints:
+          - "Use #SBATCH --nodes=4 and --gres=gpu:8."
+          - "Set MASTER_ADDR using scontrol show hostname."
+          - "Use srun to launch torchrun on each node."
+        solution: |
+          ```bash
+          #!/bin/bash
+          #SBATCH --job-name=distributed-train
+          #SBATCH --partition=gpu
+          #SBATCH --nodes=4
+          #SBATCH --ntasks-per-node=1
+          #SBATCH --gres=gpu:a100:8
+          #SBATCH --cpus-per-task=64
+          #SBATCH --mem=512G
+          #SBATCH --time=48:00:00
+          #SBATCH --output=train_%j.log
+
+          # NCCL Configuration
+          export NCCL_DEBUG=INFO
+          export NCCL_IB_DISABLE=0
+          export NCCL_IB_HCA=mlx5
+          export NCCL_SOCKET_IFNAME=eno1
+
+          # Master node info
+          export MASTER_ADDR=$(scontrol show hostname $SLURM_JOB_NODELIST | head -n1)
+          export MASTER_PORT=29500
+
+          # Load environment
+          module load apptainer
+
+          srun apptainer exec --nv \
+            --bind /scratch:/scratch \
+            /shared/containers/pytorch-24.01.sif \
+            torchrun \
+              --nproc_per_node=8 \
+              --nnodes=$SLURM_NNODES \
+              --node_rank=$SLURM_NODEID \
+              --master_addr=$MASTER_ADDR \
+              --master_port=$MASTER_PORT \
+              train.py \
+                --deepspeed ds_config.json \
+                --bf16 \
+                --batch_size 2 \
+                --gradient_accumulation_steps 4
+          ```
+
+  # ---------------------------------------------------------------------------
+  # LESSON 4 — Data Pipeline Engineering
+  # ---------------------------------------------------------------------------
+  - id: "data-pipeline-engineering"
+    title: "Data Pipeline Engineering"
+    order: 4
+    objectives:
+      - "Design efficient ETL pipelines for ML training data"
+      - "Version datasets with DVC (Data Version Control)"
+      - "Use WebDataset for large-scale streaming data loading"
+      - "Build feature stores for reusable ML features"
+    content_md: |
+      # Data Pipeline Engineering
+
+      ## ETL for Machine Learning
+
+      ML data pipelines differ from traditional ETL because they must
+      handle unstructured data (images, text, audio), maintain
+      **reproducibility**, and feed GPUs fast enough to avoid idle compute.
+
+      ```
+      ┌────────┐    ┌───────────┐    ┌──────────┐    ┌─────────┐
+      │ Source  │───→│ Transform │───→│  Store   │───→│  Load   │
+      │ (S3,DB) │    │ (Clean,   │    │ (Parquet,│    │(DataLoad│
+      │         │    │  Tokenize)│    │  TFRec)  │    │  er)    │
+      └────────┘    └───────────┘    └──────────┘    └─────────┘
+      ```
+
+      ### Efficient Storage Formats
+
+      | Format      | Best For           | Random Access | Compression |
+      |-------------|--------------------|---------------|-------------|
+      | Parquet     | Tabular data       | Column-level  | Excellent   |
+      | TFRecord    | TensorFlow         | Sequential    | Good        |
+      | WebDataset  | Large-scale PyTorch| Sequential    | Good        |
+      | HDF5        | Scientific arrays  | Dataset-level | Good        |
+      | Arrow/Lance | Feature stores     | Row + Column  | Excellent   |
+
+      ### Example: Converting ImageNet to WebDataset
+
+      ```python
+      import webdataset as wds
+      import os
+
+      def create_shards(image_dir, output_pattern, max_size=1e9):
+          """Convert a directory of images to WebDataset shards."""
+          with wds.ShardWriter(output_pattern, maxsize=max_size) as sink:
+              for class_dir in sorted(os.listdir(image_dir)):
+                  class_path = os.path.join(image_dir, class_dir)
+                  if not os.path.isdir(class_path):
+                      continue
+                  for fname in sorted(os.listdir(class_path)):
+                      image_path = os.path.join(class_path, fname)
+                      with open(image_path, "rb") as f:
+                          image_data = f.read()
+                      sink.write({
+                          "__key__": f"{class_dir}/{os.path.splitext(fname)[0]}",
+                          "jpg": image_data,
+                          "cls": class_dir.encode(),
+                      })
+
+      # Creates shards: imagenet-000000.tar, imagenet-000001.tar, ...
+      create_shards("/data/imagenet/train", "imagenet-%06d.tar")
+      ```
+
+      ## Data Version Control (DVC)
+
+      DVC tracks large datasets alongside Git, storing actual data in
+      remote storage (S3, GCS, Azure Blob, SSH):
+
+      ```bash
+      # Initialize DVC in a Git repo
+      cd my-ml-project
+      dvc init
+
+      # Track a large dataset
+      dvc add data/training_data.parquet
+      git add data/training_data.parquet.dvc data/.gitignore
+      git commit -m "Add training data v1"
+
+      # Configure remote storage
+      dvc remote add -d myremote s3://my-bucket/dvc-store
+      dvc push
+
+      # Later: switch to a different data version
+      git checkout data-v2
+      dvc checkout  # Downloads the correct version from S3
+      ```
+
+      DVC creates `.dvc` files that contain an MD5 hash pointing to the
+      actual data in remote storage. Git tracks these small pointer files.
+
+      ## Streaming Data Loading with WebDataset
+
+      For datasets too large to fit on local disk, **WebDataset** streams
+      directly from tar shards, which is ideal for distributed training:
+
+      ```python
+      import webdataset as wds
+      import torchvision.transforms as T
+
+      transform = T.Compose([
+          T.RandomResizedCrop(224),
+          T.RandomHorizontalFlip(),
+          T.ToTensor(),
+          T.Normalize(mean=[0.485, 0.456, 0.406],
+                      std=[0.229, 0.224, 0.225]),
+      ])
+
+      dataset = (
+          wds.WebDataset("s3://bucket/imagenet/train-{000000..001281}.tar")
+          .shuffle(10000)
+          .decode("pil")
+          .to_tuple("jpg", "cls")
+          .map_tuple(transform, lambda c: int(c))
+      )
+
+      dataloader = wds.WebLoader(dataset, batch_size=256, num_workers=8)
+      ```
+
+      Benefits over standard PyTorch DataLoader:
+      - **Sequential reads** — optimal for spinning disks and object storage
+      - **No filesystem metadata overhead** — one tar file vs millions of small files
+      - **Built-in sharding** — each worker processes different shards
+
+      ## Feature Stores
+
+      A feature store centralizes computed features for reuse across
+      training and inference:
+
+      ```python
+      # Example with Feast feature store
+      from feast import FeatureStore
+
+      store = FeatureStore(repo_path="feature_repo/")
+
+      # Retrieve training features
+      training_df = store.get_historical_features(
+          entity_df=entity_df,
+          features=[
+              "user_features:avg_session_duration",
+              "user_features:total_purchases",
+              "item_features:category_embedding",
+              "item_features:price_percentile",
+          ],
+      ).to_df()
+
+      # Online serving (low-latency)
+      feature_vector = store.get_online_features(
+          features=[...],
+          entity_rows=[{"user_id": 12345}],
+      ).to_dict()
+      ```
+
+    exercises:
+      - id: "aiml-data-q1"
+        title: "Data Format Selection"
+        description: "Which data format is most efficient for streaming large image datasets to GPUs during distributed PyTorch training?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "Individual JPEG files in directories"
+          - "A single HDF5 file with all images"
+          - "WebDataset tar shards"
+          - "SQLite database with BLOB columns"
+        correct_answer: "WebDataset tar shards"
+        hints:
+          - "Consider the I/O pattern: sequential reads are faster than random access on most storage systems."
+          - "Think about what happens with millions of small files on a network filesystem."
+        solution: "WebDataset tar shards are optimal for large-scale distributed training because they use sequential I/O (ideal for object storage and parallel filesystems), avoid the metadata overhead of millions of small files, and support built-in sharding for multi-worker data loading. Individual files cause filesystem metadata bottlenecks, HDF5 has locking issues with concurrent readers, and SQLite isn't designed for this workload."
+
+      - id: "aiml-data-code1"
+        title: "DVC Dataset Versioning"
+        description: "Write a sequence of bash commands that: (1) initialize DVC in an existing Git repo, (2) add a large dataset directory to DVC tracking, (3) configure an S3 remote, (4) push data to remote, and (5) commit the DVC tracking files to Git."
+        exercise_type: "coding"
+        difficulty: 2
+        hints:
+          - "dvc init sets up the .dvc/ directory."
+          - "dvc add creates a .dvc file and updates .gitignore."
+          - "dvc remote add -d sets the default remote."
+        solution: |
+          ```bash
+          # 1. Initialize DVC
+          cd my-ml-project
+          dvc init
+
+          # 2. Track the dataset
+          dvc add data/training_dataset/
+
+          # 3. Configure S3 remote storage
+          dvc remote add -d s3store s3://my-bucket/dvc-cache
+
+          # 4. Push data to remote
+          dvc push
+
+          # 5. Commit tracking files to Git
+          git add data/training_dataset.dvc data/.gitignore .dvc/config
+          git commit -m "Track training dataset v1 with DVC"
+          git push
+          ```
+
+      - id: "aiml-data-lab1"
+        title: "WebDataset Streaming Pipeline"
+        description: "Write a complete Python script that creates a WebDataset-based DataLoader for streaming image classification data from tar shards. Include proper shuffling, decoding, augmentation transforms (RandomResizedCrop, HorizontalFlip, Normalize), and batching."
+        exercise_type: "lab"
+        difficulty: 3
+        hints:
+          - "Use wds.WebDataset with a shard URL pattern."
+          - "Chain .shuffle(), .decode(), .to_tuple(), and .map_tuple()."
+          - "Use wds.WebLoader instead of torch.utils.data.DataLoader."
+        solution: |
+          ```python
+          import webdataset as wds
+          import torchvision.transforms as T
+
+          # Augmentation pipeline
+          train_transform = T.Compose([
+              T.RandomResizedCrop(224),
+              T.RandomHorizontalFlip(),
+              T.ColorJitter(brightness=0.2, contrast=0.2),
+              T.ToTensor(),
+              T.Normalize(
+                  mean=[0.485, 0.456, 0.406],
+                  std=[0.229, 0.224, 0.225],
+              ),
+          ])
+
+          # Create streaming dataset
+          url_pattern = "/data/shards/train-{000000..001281}.tar"
+          dataset = (
+              wds.WebDataset(url_pattern, shardshuffle=True)
+              .shuffle(5000)
+              .decode("pil")
+              .to_tuple("jpg;png", "cls")
+              .map_tuple(train_transform, lambda c: int(c))
+          )
+
+          # Create DataLoader
+          loader = wds.WebLoader(
+              dataset,
+              batch_size=256,
+              num_workers=8,
+              pin_memory=True,
+          )
+
+          # Training loop
+          for images, labels in loader:
+              images = images.cuda(non_blocking=True)
+              labels = labels.cuda(non_blocking=True)
+              # ... forward, backward, step
+          ```
+
+  # ---------------------------------------------------------------------------
+  # LESSON 5 — Model Registry & Versioning
+  # ---------------------------------------------------------------------------
+  - id: "model-registry-versioning"
+    title: "Model Registry & Versioning"
+    order: 5
+    objectives:
+      - "Set up MLflow for experiment tracking and model management"
+      - "Log metrics, parameters, and artifacts during training"
+      - "Register and version models in the MLflow Model Registry"
+      - "Compare experiments and ensure reproducibility"
+    content_md: |
+      # Model Registry & Versioning
+
+      ## Why Track Experiments?
+
+      ML development is highly iterative — dozens of hyperparameter
+      combinations, data versions, and architecture tweaks. Without
+      systematic tracking, it's impossible to reproduce results or compare
+      approaches.
+
+      ```
+      Without tracking:             With MLflow:
+      ┌────────────────────┐       ┌──────────────────────────┐
+      │ "I think the best  │       │ Run #47                  │
+      │  model was from    │       │ lr=2e-5, epochs=3        │
+      │  last Tuesday..."  │       │ F1=0.923, loss=0.187     │
+      │                    │       │ Model: bert-ft-v3        │
+      │ results_final_v2   │       │ Data: dataset-v2.1       │
+      │ results_FINAL_v3   │       │ Artifact: model.pt       │
+      └────────────────────┘       └──────────────────────────┘
+      ```
+
+      ## MLflow Setup
+
+      MLflow has four main components:
+
+      | Component        | Purpose                              |
+      |------------------|--------------------------------------|
+      | Tracking         | Log params, metrics, artifacts       |
+      | Projects         | Reproducible packaging               |
+      | Models           | Standard model packaging format      |
+      | Model Registry   | Centralized model store + lifecycle  |
+
+      ### Deploy MLflow Tracking Server
+
+      ```bash
+      # Using Docker Compose
+      # docker-compose.yaml
+      version: "3.9"
+      services:
+        mlflow:
+          image: ghcr.io/mlflow/mlflow:v2.14.0
+          command: >
+            mlflow server
+            --host 0.0.0.0
+            --port 5000
+            --backend-store-uri postgresql://mlflow:secret@postgres:5432/mlflow
+            --default-artifact-root s3://ml-artifacts/mlflow
+          ports:
+            - "5000:5000"
+          environment:
+            AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+            AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+        postgres:
+          image: postgres:16
+          environment:
+            POSTGRES_DB: mlflow
+            POSTGRES_USER: mlflow
+            POSTGRES_PASSWORD: secret
+          volumes:
+            - pgdata:/var/lib/postgresql/data
+      volumes:
+        pgdata:
+      ```
+
+      ## Experiment Tracking
+
+      Integrate MLflow tracking into your training script:
+
+      ```python
+      import mlflow
+      import mlflow.pytorch
+
+      mlflow.set_tracking_uri("http://mlflow.internal:5000")
+      mlflow.set_experiment("bert-finetuning")
+
+      with mlflow.start_run(run_name="bert-lr2e5-ep3"):
+          # Log hyperparameters
+          mlflow.log_params({
+              "learning_rate": 2e-5,
+              "batch_size": 32,
+              "epochs": 3,
+              "model_name": "bert-base-uncased",
+              "max_seq_length": 512,
+              "optimizer": "AdamW",
+              "weight_decay": 0.01,
+          })
+
+          # Training loop
+          for epoch in range(3):
+              train_loss = train_one_epoch(model, train_loader, optimizer)
+              val_metrics = evaluate(model, val_loader)
+
+              # Log metrics per step
+              mlflow.log_metrics({
+                  "train_loss": train_loss,
+                  "val_f1": val_metrics["f1"],
+                  "val_accuracy": val_metrics["accuracy"],
+                  "val_loss": val_metrics["loss"],
+              }, step=epoch)
+
+          # Log the trained model
+          mlflow.pytorch.log_model(
+              model,
+              artifact_path="model",
+              registered_model_name="bert-classifier",
+          )
+
+          # Log additional artifacts
+          mlflow.log_artifact("training_config.yaml")
+          mlflow.log_artifact("confusion_matrix.png")
+      ```
+
+      ## Model Registry
+
+      The Model Registry provides a centralized store with versioning
+      and lifecycle stages:
+
+      ```python
+      from mlflow.tracking import MlflowClient
+
+      client = MlflowClient()
+
+      # Transition model to staging
+      client.transition_model_version_stage(
+          name="bert-classifier",
+          version=3,
+          stage="Staging",
+      )
+
+      # After validation, promote to production
+      client.transition_model_version_stage(
+          name="bert-classifier",
+          version=3,
+          stage="Production",
+      )
+
+      # Load the production model for serving
+      model = mlflow.pytorch.load_model("models:/bert-classifier/Production")
+      ```
+
+      Model lifecycle stages:
+
+      ```
+      None → Staging → Production → Archived
+                │                      ↑
+                └──── (if tests fail) ──┘
+      ```
+
+      ## Comparing Experiments
+
+      MLflow's UI and API allow systematic comparison:
+
+      ```python
+      # Search for best runs
+      runs = mlflow.search_runs(
+          experiment_names=["bert-finetuning"],
+          filter_string="metrics.val_f1 > 0.9",
+          order_by=["metrics.val_f1 DESC"],
+          max_results=10,
+      )
+
+      print(runs[["run_id", "params.learning_rate",
+                    "metrics.val_f1", "metrics.val_loss"]])
+      ```
+
+      ## Reproducibility Checklist
+
+      For full reproducibility, log:
+      - **Code version**: Git commit hash
+      - **Data version**: DVC hash or dataset fingerprint
+      - **Environment**: conda environment export or container digest
+      - **Random seeds**: All seeds (Python, NumPy, PyTorch, CUDA)
+      - **Hardware**: GPU model, driver version, CUDA version
+
+      ```python
+      import subprocess
+
+      mlflow.log_params({
+          "git_commit": subprocess.check_output(
+              ["git", "rev-parse", "HEAD"]
+          ).decode().strip(),
+          "cuda_version": torch.version.cuda,
+          "gpu_model": torch.cuda.get_device_name(0),
+          "torch_version": torch.__version__,
+          "seed": 42,
+      })
+      ```
+
+    exercises:
+      - id: "aiml-registry-q1"
+        title: "MLflow Components"
+        description: "Which MLflow component provides centralized model storage with version control and lifecycle stage management (None → Staging → Production → Archived)?"
+        exercise_type: "quiz"
+        difficulty: 1
+        options:
+          - "MLflow Tracking"
+          - "MLflow Projects"
+          - "MLflow Models"
+          - "MLflow Model Registry"
+        correct_answer: "MLflow Model Registry"
+        hints:
+          - "It's the component that manages model versions and transitions between stages."
+          - "Tracking logs experiments; this component manages model lifecycle."
+        solution: "The MLflow Model Registry provides a centralized model store with version control, stage transitions (None → Staging → Production → Archived), annotations, and access control. MLflow Tracking logs experiments (parameters, metrics, artifacts), MLflow Projects packages code for reproducibility, and MLflow Models defines a standard packaging format. The Model Registry builds on top of these to manage the full model lifecycle."
+
+      - id: "aiml-registry-code1"
+        title: "MLflow Experiment Tracking Integration"
+        description: "Write a Python training script that integrates MLflow tracking. Log hyperparameters (learning rate, batch size, epochs), per-epoch metrics (train_loss, val_accuracy), and save the final model with mlflow.pytorch.log_model(). Use the experiment name 'sentiment-analysis'."
+        exercise_type: "coding"
+        difficulty: 2
+        hints:
+          - "Use mlflow.set_experiment() and mlflow.start_run() context manager."
+          - "Log params with mlflow.log_params() and metrics with mlflow.log_metrics()."
+          - "Include the step parameter when logging per-epoch metrics."
+        solution: |
+          ```python
+          import mlflow
+          import mlflow.pytorch
+          import torch
+
+          mlflow.set_tracking_uri("http://mlflow-server:5000")
+          mlflow.set_experiment("sentiment-analysis")
+
+          # Hyperparameters
+          config = {
+              "learning_rate": 3e-5,
+              "batch_size": 16,
+              "epochs": 5,
+              "model_name": "distilbert-base-uncased",
+              "max_length": 256,
+          }
+
+          with mlflow.start_run(run_name="distilbert-sentiment-v1"):
+              mlflow.log_params(config)
+
+              model = load_model(config["model_name"])
+              optimizer = torch.optim.AdamW(
+                  model.parameters(), lr=config["learning_rate"]
+              )
+
+              for epoch in range(config["epochs"]):
+                  train_loss = train_epoch(model, train_loader, optimizer)
+                  val_acc = evaluate(model, val_loader)
+
+                  mlflow.log_metrics(
+                      {"train_loss": train_loss, "val_accuracy": val_acc},
+                      step=epoch,
+                  )
+                  print(f"Epoch {epoch}: loss={train_loss:.4f} acc={val_acc:.4f}")
+
+              # Save model to registry
+              mlflow.pytorch.log_model(
+                  model,
+                  artifact_path="model",
+                  registered_model_name="sentiment-classifier",
+              )
+          ```
+
+      - id: "aiml-registry-lab1"
+        title: "MLflow Server Deployment"
+        description: "Write a Docker Compose file that deploys an MLflow tracking server backed by PostgreSQL for metadata and S3 for artifact storage. Include proper environment variables, persistent volumes, and health checks."
+        exercise_type: "lab"
+        difficulty: 3
+        hints:
+          - "MLflow needs --backend-store-uri for PostgreSQL and --default-artifact-root for S3."
+          - "PostgreSQL should have a persistent volume for data."
+          - "Pass AWS credentials as environment variables."
+        solution: |
+          ```yaml
+          version: "3.9"
+          services:
+            mlflow:
+              image: ghcr.io/mlflow/mlflow:v2.14.0
+              command: >
+                mlflow server
+                --host 0.0.0.0
+                --port 5000
+                --backend-store-uri postgresql://mlflow:${POSTGRES_PASSWORD}@postgres:5432/mlflow
+                --default-artifact-root s3://${S3_BUCKET}/mlflow-artifacts
+                --serve-artifacts
+              ports:
+                - "5000:5000"
+              environment:
+                AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+                AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+                AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+              depends_on:
+                postgres:
+                  condition: service_healthy
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+                interval: 30s
+                timeout: 10s
+                retries: 3
+
+            postgres:
+              image: postgres:16-alpine
+              environment:
+                POSTGRES_DB: mlflow
+                POSTGRES_USER: mlflow
+                POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+              volumes:
+                - pgdata:/var/lib/postgresql/data
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U mlflow"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
+
+          volumes:
+            pgdata:
+          ```
+          Launch with:
+          ```bash
+          export POSTGRES_PASSWORD=secure-password
+          export S3_BUCKET=my-ml-artifacts
+          export AWS_ACCESS_KEY_ID=...
+          export AWS_SECRET_ACCESS_KEY=...
+          docker compose up -d
+          ```

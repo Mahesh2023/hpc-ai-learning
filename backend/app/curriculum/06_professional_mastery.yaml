@@ -1,0 +1,1362 @@
+id: "professional-mastery"
+title: "Professional Mastery"
+description: "Achieve professional-level expertise in designing, optimizing, and governing enterprise-scale AI/HPC platforms with advanced strategies for multi-cloud, security, and performance."
+level: "professional"
+order: 6
+estimated_hours: 20
+prerequisites: ["platform-engineering"]
+skills: ["Platform", "HPC", "Cloud"]
+
+lessons:
+  # ──────────────────────────────────────────────────────────────────────
+  # Lesson 1: Multi-Cluster & Hybrid Cloud
+  # ──────────────────────────────────────────────────────────────────────
+  - id: "multi-cluster-hybrid-cloud"
+    title: "Multi-Cluster & Hybrid Cloud"
+    order: 1
+    objectives:
+      - "Understand Kubernetes cluster federation and multi-cluster management patterns"
+      - "Design hybrid cloud architectures that burst from on-prem HPC to public cloud"
+      - "Implement workload placement policies across heterogeneous clusters"
+      - "Compare multi-cloud strategies and their trade-offs for AI/HPC workloads"
+    content_md: |
+      # Multi-Cluster & Hybrid Cloud for AI/HPC
+
+      Modern AI/HPC organizations rarely operate a single cluster. As GPU demand fluctuates and
+      models grow larger, the ability to federate workloads across on-premises data centers and
+      multiple cloud providers becomes a critical capability. This lesson covers the architecture
+      patterns, tooling, and operational strategies for multi-cluster and hybrid cloud deployments.
+
+      ## Why Multi-Cluster?
+
+      A single Kubernetes cluster has practical limits — the upstream recommendation is roughly
+      5,000 nodes and 150,000 pods. Large-scale training jobs, combined with inference serving
+      and development workloads, often push organizations beyond this boundary. Additionally,
+      geographic distribution, blast-radius isolation, and regulatory requirements drive the need
+      for multiple clusters.
+
+      ```
+      ┌─────────────────────────────────────────────────────────────┐
+      │                   Control Plane (Hub)                       │
+      │  ┌──────────┐  ┌──────────────┐  ┌─────────────────────┐   │
+      │  │ Admiralty │  │ Cluster API  │  │ Argo CD / Fleet     │   │
+      │  │ Scheduler │  │  Management  │  │ GitOps Sync         │   │
+      │  └────┬─────┘  └──────┬───────┘  └──────────┬──────────┘   │
+      └───────┼───────────────┼──────────────────────┼─────────────┘
+              │               │                      │
+        ┌─────▼─────┐  ┌─────▼─────┐  ┌─────────────▼──────────┐
+        │ On-Prem   │  │  AWS EKS  │  │    GCP GKE Cluster     │
+        │ HPC (A100)│  │  (p5.48xl)│  │    (A3 / TPU v5p)      │
+        │ InfiniBand│  │  EFA      │  │    GPUDirect-TCPXO     │
+        └───────────┘  └───────────┘  └────────────────────────┘
+      ```
+
+      ## Kubernetes Federation Approaches
+
+      There are several approaches to federating Kubernetes clusters for HPC workloads:
+
+      **1. KubeFed (Kubernetes Federation v2):** Propagates resource definitions across clusters
+      using federated types. While mature, it adds operational complexity and is best suited for
+      uniform workloads rather than heterogeneous GPU scheduling.
+
+      **2. Admiralty / Virtual Kubelet:** These tools create virtual nodes that represent remote
+      clusters. A pod scheduled on a virtual node is transparently dispatched to the target
+      cluster. This is powerful for cloud-bursting:
+
+      ```yaml
+      # Admiralty multi-cluster scheduling source config
+      apiVersion: multicluster.admiralty.io/v1alpha1
+      kind: ClusterSource
+      metadata:
+        name: aws-burst-cluster
+      spec:
+        serviceAccount:
+          import:
+            namespace: admiralty
+            name: aws-burst-sa
+      ---
+      apiVersion: multicluster.admiralty.io/v1alpha1
+      kind: ClusterTarget
+      metadata:
+        name: aws-burst-cluster
+      spec:
+        self: false
+        serviceAccount:
+          import:
+            namespace: admiralty
+            name: aws-burst-sa
+      ```
+
+      **3. Rancher Fleet / Argo CD ApplicationSets:** GitOps-driven approaches that render
+      manifests per-cluster from a single source of truth. Fleet's `BundleDeployment` model
+      allows cluster-specific overlays:
+
+      ```yaml
+      # Fleet GitRepo targeting GPU clusters
+      apiVersion: fleet.cattle.io/v1alpha1
+      kind: GitRepo
+      metadata:
+        name: ai-platform-manifests
+        namespace: fleet-default
+      spec:
+        repo: https://github.com/org/ai-platform
+        branch: main
+        paths:
+          - overlays/production
+        targets:
+          - name: gpu-clusters
+            clusterSelector:
+              matchLabels:
+                gpu-type: nvidia-a100
+          - name: cloud-burst
+            clusterSelector:
+              matchLabels:
+                provider: aws
+      ```
+
+      ## Cloud Bursting from On-Prem HPC
+
+      Cloud bursting lets on-premises clusters offload jobs to cloud when local capacity is
+      exhausted. The key design considerations are:
+
+      - **Data Gravity:** Large datasets (multi-TB) take hours to transfer. Prefer cloud object
+        stores with pre-staged data or use parallel file system bridges (e.g., Weka, VAST with
+        cloud tiering).
+      - **Network Topology:** On-prem InfiniBand (200-400 Gb/s) vastly outperforms cloud
+        interconnects. Schedule tightly-coupled distributed training on-prem; embarrassingly
+        parallel or inference workloads are ideal burst candidates.
+      - **Identity Federation:** Use OIDC federation between on-prem identity providers and cloud
+        IAM to avoid managing static credentials.
+
+      A typical burst controller watches pending pod queue depth and provisions cloud node pools:
+
+      ```python
+      # Simplified cloud-burst controller logic
+      import kubernetes
+      from cloud_provider import provision_gpu_nodes
+
+      def check_burst_needed(core_api, threshold=10, namespace="training"):
+          pending = core_api.list_namespaced_pod(
+              namespace=namespace,
+              field_selector="status.phase=Pending"
+          )
+          gpu_pending = [
+              p for p in pending.items
+              if any(
+                  c.resources.requests.get("nvidia.com/gpu")
+                  for c in p.spec.containers
+              )
+          ]
+          if len(gpu_pending) > threshold:
+              needed_gpus = sum(
+                  int(c.resources.requests.get("nvidia.com/gpu", 0))
+                  for p in gpu_pending
+                  for c in p.spec.containers
+              )
+              provision_gpu_nodes(
+                  count=needed_gpus // 8,  # 8-GPU nodes
+                  instance_type="p5.48xlarge",
+                  max_nodes=20,
+                  spot=True
+              )
+              return True
+          return False
+      ```
+
+      ## Multi-Cloud Strategy
+
+      Running across AWS, GCP, and Azure simultaneously is complex but provides leverage in GPU
+      availability negotiations and resilience. Key patterns include:
+
+      - **Active-Active:** All clouds serve production workloads. Requires consistent networking
+        (e.g., Aviatrix, Tailscale mesh) and unified observability (Datadog, Grafana Cloud).
+      - **Active-Passive:** One cloud is primary; others serve as DR or burst targets.
+      - **Workload-Specific:** Use each cloud for its strengths — GCP for TPUs, AWS for largest
+        GPU selection, Azure for Microsoft ecosystem integration.
+
+      Regardless of strategy, abstract cloud-specific resources behind Kubernetes APIs. Use
+      Crossplane or Terraform with Atlantis for provisioning, and ensure training scripts
+      reference generic device ordinals (`cuda:0`) rather than cloud-specific accelerator names.
+
+    exercises:
+      - id: "prof-mastery-multi-cluster-q1"
+        title: "Cloud Bursting Best Practices"
+        description: "Which type of AI/HPC workload is the BEST candidate for cloud bursting from an on-premises cluster?"
+        exercise_type: "quiz"
+        difficulty: 3
+        options:
+          - "Tightly-coupled distributed training with NCCL all-reduce across 256 GPUs"
+          - "Embarrassingly parallel hyperparameter sweep across independent single-GPU jobs"
+          - "Real-time inference serving with strict sub-10ms latency SLAs"
+          - "Interactive Jupyter notebook sessions for data exploration"
+        correct_answer: "Embarrassingly parallel hyperparameter sweep across independent single-GPU jobs"
+        hints:
+          - "Consider which workloads are most sensitive to inter-node network latency"
+          - "Cloud interconnects (EFA, GPUDirect-TCPX) are fast but still slower than on-prem InfiniBand"
+          - "Embarrassingly parallel means each job is independent — no cross-node communication needed"
+        solution: "Embarrassingly parallel hyperparameter sweeps are ideal cloud burst candidates because each trial runs independently on a single GPU with no inter-node communication. This eliminates sensitivity to cloud network latency. Tightly-coupled distributed training requires high-bandwidth, low-latency interconnects (InfiniBand) best served on-prem. Real-time inference needs stable, predictable infrastructure close to users. Notebooks are interactive and latency-sensitive."
+
+      - id: "prof-mastery-multi-cluster-lab1"
+        title: "Implement Multi-Cluster Workload Distribution"
+        description: |
+          Design and implement a multi-cluster workload distribution strategy:
+
+          1. Write a Fleet GitRepo manifest that targets three cluster types: on-prem GPU,
+             cloud GPU, and cloud CPU — each with appropriate label selectors.
+          2. Create a Python script that queries the Kubernetes API across two clusters,
+             aggregates GPU utilization, and recommends which cluster should receive the
+             next training job based on available capacity.
+          3. Write a Kustomize overlay structure (base + overlays) that customizes a
+             PyTorch training job for on-prem (InfiniBand, local NVMe storage) vs. cloud
+             (EFA, S3 FUSE mount) environments.
+
+          Deliver all three artifacts as working configuration files and scripts.
+        exercise_type: "lab"
+        difficulty: 4
+        hints:
+          - "Use clusterSelector.matchLabels in Fleet targets to differentiate cluster types"
+          - "The kubernetes Python client supports multiple kubeconfig contexts — iterate over them"
+          - "Kustomize patches can replace volume mounts, node selectors, and environment variables per overlay"
+        solution: |
+          The Fleet GitRepo should define three targets with distinct label selectors (e.g., accelerator: nvidia-a100, provider: aws, role: cpu-worker). The Python aggregator loads multiple kubeconfig contexts, queries each cluster's node list for 'nvidia.com/gpu' capacity and allocatable values, computes utilization percentages, and returns the cluster with the lowest GPU utilization. The Kustomize structure uses a base/ directory with the core PyTorchJob spec, an overlays/onprem/ directory that patches in hostNetwork: true, InfiniBand device requests, and NVMe hostPath volumes, and an overlays/cloud/ directory that patches in EFA device plugin resources and S3 CSI driver PVCs.
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Lesson 2: Cost Optimization & FinOps
+  # ──────────────────────────────────────────────────────────────────────
+  - id: "cost-optimization-finops"
+    title: "Cost Optimization & FinOps"
+    order: 2
+    objectives:
+      - "Implement spot and preemptible instance strategies for GPU training workloads"
+      - "Right-size GPU resources using profiling data and utilization metrics"
+      - "Design chargeback and showback models for shared AI/HPC platforms"
+      - "Perform total cost of ownership analysis comparing on-prem vs. cloud GPU"
+    content_md: |
+      # Cost Optimization & FinOps for AI/HPC
+
+      GPU compute is the single largest cost center for AI organizations. A single 8xH100 node
+      on AWS (p5.48xlarge) costs approximately $98/hour on-demand — that is over $860,000 per
+      year if run continuously. Mastering FinOps (Financial Operations) practices specific to
+      AI/HPC workloads is essential for sustainable scaling.
+
+      ## Spot & Preemptible Instance Strategies
+
+      Cloud providers offer unused GPU capacity at 60-90% discounts through spot (AWS),
+      preemptible (GCP), and low-priority (Azure) instances. The trade-off is that instances can
+      be reclaimed with as little as 30 seconds notice (GCP) or 2 minutes (AWS).
+
+      **Making Training Spot-Safe:**
+
+      The key is checkpoint-based fault tolerance. Modern frameworks provide built-in support:
+
+      ```python
+      import torch
+      import torch.distributed.checkpoint as dcp
+      from torch.distributed.checkpoint import FileSystemWriter
+
+      class SpotAwareTrainer:
+          def __init__(self, model, optimizer, checkpoint_dir, save_interval=100):
+              self.model = model
+              self.optimizer = optimizer
+              self.checkpoint_dir = checkpoint_dir
+              self.save_interval = save_interval
+              self.global_step = 0
+              self._register_preemption_handler()
+
+          def _register_preemption_handler(self):
+              """Register SIGTERM handler for spot preemption."""
+              import signal
+              signal.signal(signal.SIGTERM, self._emergency_checkpoint)
+
+          def _emergency_checkpoint(self, signum, frame):
+              """Save checkpoint immediately on preemption signal."""
+              print(f"SIGTERM received at step {self.global_step}, saving emergency checkpoint...")
+              self._save_checkpoint(tag="emergency")
+              raise SystemExit(0)
+
+          def _save_checkpoint(self, tag=None):
+              step_tag = tag or f"step_{self.global_step}"
+              state_dict = {
+                  "model": self.model.state_dict(),
+                  "optimizer": self.optimizer.state_dict(),
+                  "global_step": self.global_step,
+              }
+              writer = FileSystemWriter(f"{self.checkpoint_dir}/{step_tag}")
+              dcp.save(state_dict, writer)
+              print(f"Checkpoint saved: {step_tag}")
+
+          def train_step(self, batch):
+              # ... forward, backward, optimizer step ...
+              self.global_step += 1
+              if self.global_step % self.save_interval == 0:
+                  self._save_checkpoint()
+      ```
+
+      **Spot Instance Kubernetes Configuration:**
+
+      ```yaml
+      # Karpenter provisioner for spot GPU nodes
+      apiVersion: karpenter.sh/v1beta1
+      kind: NodePool
+      metadata:
+        name: gpu-spot-training
+      spec:
+        template:
+          metadata:
+            labels:
+              capacity-type: spot
+              workload-type: training
+          spec:
+            requirements:
+              - key: karpenter.sh/capacity-type
+                operator: In
+                values: ["spot"]
+              - key: node.kubernetes.io/instance-type
+                operator: In
+                values: ["p4d.24xlarge", "p4de.24xlarge", "p5.48xlarge"]
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values: ["us-east-1a", "us-east-1b", "us-east-1c"]
+            nodeClassRef:
+              name: gpu-spot-class
+        disruption:
+          consolidationPolicy: WhenEmpty
+          consolidateAfter: 60s
+        limits:
+          cpu: "2000"
+          memory: 8000Gi
+          nvidia.com/gpu: "256"
+      ```
+
+      ## Right-Sizing GPU Resources
+
+      GPU underutilization is rampant. Studies show average GPU utilization in ML clusters is
+      often below 40%. Right-sizing requires profiling actual workloads:
+
+      ```bash
+      # Profile GPU utilization with DCGM over a training run
+      dcgmi dmon -e 203,204,210,1001,1002 -d 1000 | tee gpu_profile.log
+      # Fields: GPU_UTIL, MEM_COPY_UTIL, SM_ACTIVE, FP16_ACTIVE, TENSOR_ACTIVE
+
+      # Analyze utilization to decide GPU type
+      # If TENSOR_ACTIVE < 20% and MEM_COPY_UTIL < 30%, consider:
+      #   - Smaller GPU (A10G instead of A100)
+      #   - GPU sharing (MIG or time-slicing)
+      #   - Batch size increase to improve utilization
+      ```
+
+      **GPU Right-Sizing Decision Matrix:**
+
+      ```
+      TENSOR_ACTIVE  │  MEM_COPY_UTIL  │  Recommendation
+      ───────────────┼─────────────────┼──────────────────────────────
+      > 60%          │  > 50%          │  Correct GPU tier, well-utilized
+      > 60%          │  < 30%          │  Compute-bound — consider faster GPU
+      < 30%          │  > 50%          │  Memory-bound — increase batch size
+      < 30%          │  < 30%          │  Over-provisioned — downsize GPU tier
+      < 10%          │  < 10%          │  Severe waste — use MIG or CPU instead
+      ```
+
+      ## Chargeback & Showback Models
+
+      Shared GPU platforms need transparent cost attribution. Implement chargeback using
+      Kubernetes labels and resource metering:
+
+      ```python
+      # GPU chargeback calculator using Prometheus metrics
+      import requests
+      from datetime import datetime, timedelta
+
+      PROM_URL = "http://prometheus:9090/api/v1"
+      GPU_HOUR_COST = {
+          "nvidia-a100-80gb": 3.50,
+          "nvidia-h100-80gb": 8.50,
+          "nvidia-a10g": 1.20,
+      }
+
+      def get_team_gpu_cost(team: str, days: int = 30) -> dict:
+          query = f"""
+            sum by (gpu_model) (
+              increase(
+                DCGM_FI_PROF_GR_ENGINE_ACTIVE{{
+                  namespace=~"team-{team}-.*"
+                }}[{days}d]
+              )
+            ) / 3600
+          """
+          resp = requests.get(f"{PROM_URL}/query", params={"query": query})
+          results = resp.json()["data"]["result"]
+
+          total_cost = 0.0
+          breakdown = {}
+          for r in results:
+              gpu_model = r["metric"]["gpu_model"]
+              gpu_hours = float(r["value"][1])
+              cost = gpu_hours * GPU_HOUR_COST.get(gpu_model, 5.00)
+              breakdown[gpu_model] = {"gpu_hours": round(gpu_hours, 1), "cost": round(cost, 2)}
+              total_cost += cost
+
+          return {"team": team, "period_days": days, "total_cost": round(total_cost, 2), "breakdown": breakdown}
+      ```
+
+      ## Total Cost of Ownership (TCO) Analysis
+
+      When comparing on-prem vs. cloud, account for all cost components:
+
+      - **On-Prem:** Hardware (amortized 3-5yr), power, cooling, data center space, network,
+        staff, spares inventory, and opportunity cost of procurement lead time (6-12 months).
+      - **Cloud:** Instance hours, egress, storage, managed services, and reserved instance
+        commitments.
+
+      A common finding: on-prem wins at >60% sustained utilization over 3 years, while cloud
+      wins for bursty or experimental workloads. Most organizations land on a hybrid model where
+      a baseline on-prem footprint handles steady-state load and cloud handles peak demand.
+
+    exercises:
+      - id: "prof-mastery-cost-opt-q1"
+        title: "Spot Instance Fault Tolerance"
+        description: "What is the PRIMARY mechanism that makes distributed GPU training jobs safe to run on spot/preemptible instances?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "Using larger instance types so training completes before preemption"
+          - "Periodic checkpointing with SIGTERM handlers for emergency saves on preemption"
+          - "Running duplicate training jobs on on-demand instances as backup"
+          - "Requesting spot instances in multiple availability zones simultaneously"
+        correct_answer: "Periodic checkpointing with SIGTERM handlers for emergency saves on preemption"
+        hints:
+          - "Spot instances can be reclaimed with only 2 minutes warning (AWS) or 30 seconds (GCP)"
+          - "The key is preserving training state so the job can resume from where it left off"
+          - "SIGTERM is the signal sent by cloud providers before terminating a spot instance"
+        solution: "Periodic checkpointing combined with SIGTERM-triggered emergency saves is the primary mechanism for spot-safe training. When a preemption signal arrives, the handler saves the current model weights, optimizer state, and training step to durable storage. The job can then resume from the last checkpoint on a new instance. Running duplicates wastes resources, larger instances don't prevent preemption, and multi-AZ helps availability but doesn't prevent data loss on termination."
+
+      - id: "prof-mastery-cost-opt-code1"
+        title: "GPU Utilization Analyzer and Cost Reporter"
+        description: |
+          Write a Python class `GpuCostAnalyzer` that:
+
+          1. Accepts a list of GPU usage records, each containing: team (str), gpu_model (str),
+             gpu_hours (float), and utilization_pct (float, 0-100).
+          2. Implements a `compute_chargeback(self) -> dict` method that calculates cost per team
+             using these rates: nvidia-a100-80gb=$3.50/hr, nvidia-h100-80gb=$8.50/hr,
+             nvidia-a10g=$1.20/hr. Unknown models default to $5.00/hr.
+          3. Implements a `find_wasteful_allocations(self, threshold=30.0) -> list` that returns
+             records where utilization_pct is below the threshold, sorted ascending by utilization.
+          4. Implements a `recommend_rightsizing(self) -> list[dict]` that suggests downsizing
+             GPU tier when utilization < 30% (e.g., H100 -> A100, A100 -> A10G).
+
+          All monetary values should be rounded to 2 decimal places.
+        exercise_type: "coding"
+        difficulty: 3
+        hints:
+          - "Store the cost rates in a class-level dictionary for easy lookup"
+          - "Use dict.get(gpu_model, 5.00) for the default rate"
+          - "For rightsizing, define a downgrade mapping: {'nvidia-h100-80gb': 'nvidia-a100-80gb', 'nvidia-a100-80gb': 'nvidia-a10g'}"
+        solution: |
+          ```python
+          class GpuCostAnalyzer:
+              RATES = {
+                  "nvidia-a100-80gb": 3.50,
+                  "nvidia-h100-80gb": 8.50,
+                  "nvidia-a10g": 1.20,
+              }
+              DOWNGRADE_MAP = {
+                  "nvidia-h100-80gb": "nvidia-a100-80gb",
+                  "nvidia-a100-80gb": "nvidia-a10g",
+              }
+
+              def __init__(self, records: list[dict]):
+                  self.records = records
+
+              def compute_chargeback(self) -> dict:
+                  team_costs = {}
+                  for r in self.records:
+                      team = r["team"]
+                      cost = round(r["gpu_hours"] * self.RATES.get(r["gpu_model"], 5.00), 2)
+                      if team not in team_costs:
+                          team_costs[team] = 0.0
+                      team_costs[team] = round(team_costs[team] + cost, 2)
+                  return team_costs
+
+              def find_wasteful_allocations(self, threshold=30.0) -> list:
+                  wasteful = [r for r in self.records if r["utilization_pct"] < threshold]
+                  return sorted(wasteful, key=lambda r: r["utilization_pct"])
+
+              def recommend_rightsizing(self) -> list[dict]:
+                  recommendations = []
+                  for r in self.records:
+                      if r["utilization_pct"] < 30.0 and r["gpu_model"] in self.DOWNGRADE_MAP:
+                          recommendations.append({
+                              "team": r["team"],
+                              "current_gpu": r["gpu_model"],
+                              "recommended_gpu": self.DOWNGRADE_MAP[r["gpu_model"]],
+                              "utilization_pct": r["utilization_pct"],
+                              "potential_savings": round(
+                                  r["gpu_hours"] * (
+                                      self.RATES[r["gpu_model"]]
+                                      - self.RATES[self.DOWNGRADE_MAP[r["gpu_model"]]]
+                                  ), 2
+                              ),
+                          })
+                  return recommendations
+          ```
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Lesson 3: Security & Compliance
+  # ──────────────────────────────────────────────────────────────────────
+  - id: "security-compliance"
+    title: "Security & Compliance"
+    order: 3
+    objectives:
+      - "Implement RBAC policies for multi-tenant AI/HPC platforms"
+      - "Configure network policies to isolate training workloads"
+      - "Manage secrets securely for model registries, data stores, and API keys"
+      - "Design compliance controls for SOC2 and HIPAA in ML platform environments"
+      - "Establish data governance policies for training data and model artifacts"
+    content_md: |
+      # Security & Compliance for AI/HPC Platforms
+
+      Enterprise AI platforms handle sensitive data (PII, PHI, proprietary models) and consume
+      expensive GPU resources. A security breach can expose training data, leak proprietary model
+      weights, or allow cryptomining on GPU nodes. This lesson covers the security controls and
+      compliance frameworks required for production ML platforms.
+
+      ## Role-Based Access Control (RBAC)
+
+      Kubernetes RBAC should enforce least-privilege access to GPU namespaces. Define roles that
+      map to organizational responsibilities:
+
+      ```yaml
+      # ClusterRole for ML Engineers — can submit and monitor training jobs
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: ml-engineer
+      rules:
+        - apiGroups: ["kubeflow.org"]
+          resources: ["pytorchjobs", "mpijobs", "tfjobs"]
+          verbs: ["create", "get", "list", "watch", "delete"]
+        - apiGroups: [""]
+          resources: ["pods", "pods/log", "events"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: [""]
+          resources: ["configmaps", "secrets"]
+          verbs: ["get", "list"]
+          # Note: no create/update on secrets — handled by platform team
+        - apiGroups: [""]
+          resources: ["persistentvolumeclaims"]
+          verbs: ["create", "get", "list", "delete"]
+      ---
+      # ClusterRole for Platform Admins — full GPU and node management
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: platform-admin
+      rules:
+        - apiGroups: ["*"]
+          resources: ["*"]
+          verbs: ["*"]
+        - nonResourceURLs: ["*"]
+          verbs: ["*"]
+      ---
+      # RoleBinding scoping ML engineer to their team namespace
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: alice-ml-engineer
+        namespace: team-nlp
+      subjects:
+        - kind: User
+          name: alice@company.com
+          apiGroup: rbac.authorization.k8s.io
+      roleRef:
+        kind: ClusterRole
+        name: ml-engineer
+        apiGroup: rbac.authorization.k8s.io
+      ```
+
+      ## Network Policies
+
+      Training jobs often need access to data stores but should not reach other teams'
+      namespaces or the public internet (to prevent data exfiltration):
+
+      ```yaml
+      # Deny all ingress/egress by default, then allow specific flows
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: training-isolation
+        namespace: team-nlp
+      spec:
+        podSelector:
+          matchLabels:
+            workload-type: training
+        policyTypes:
+          - Ingress
+          - Egress
+        ingress:
+          # Allow NCCL peer-to-peer between training pods in same job
+          - from:
+              - podSelector:
+                  matchLabels:
+                    workload-type: training
+            ports:
+              - protocol: TCP
+                port: 29400   # PyTorch distributed rendezvous
+              - protocol: TCP
+                port: 29500   # NCCL socket
+        egress:
+          # Allow DNS resolution
+          - to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: kube-system
+            ports:
+              - protocol: UDP
+                port: 53
+          # Allow access to internal object storage
+          - to:
+              - ipBlock:
+                  cidr: 10.0.0.0/8
+            ports:
+              - protocol: TCP
+                port: 443
+              - protocol: TCP
+                port: 9000   # MinIO
+          # Block all public internet access
+      ```
+
+      ## Secrets Management
+
+      Never store credentials in ConfigMaps, environment variables in pod specs, or container
+      images. Use a secrets management solution:
+
+      ```yaml
+      # External Secrets Operator — sync from HashiCorp Vault
+      apiVersion: external-secrets.io/v1beta1
+      kind: ExternalSecret
+      metadata:
+        name: model-registry-creds
+        namespace: team-nlp
+      spec:
+        refreshInterval: 1h
+        secretStoreRef:
+          name: vault-backend
+          kind: ClusterSecretStore
+        target:
+          name: model-registry-creds
+          creationPolicy: Owner
+        data:
+          - secretKey: aws-access-key-id
+            remoteRef:
+              key: secret/data/ml-platform/s3
+              property: access_key_id
+          - secretKey: aws-secret-access-key
+            remoteRef:
+              key: secret/data/ml-platform/s3
+              property: secret_access_key
+      ```
+
+      ## Container Image Security
+
+      Scan all training images for vulnerabilities before allowing them on GPU nodes:
+
+      ```bash
+      # Trivy scan with severity threshold
+      trivy image --severity HIGH,CRITICAL \
+        --exit-code 1 \
+        --ignore-unfixed \
+        registry.internal/ml-team/training:v2.1.0
+
+      # Enforce via Kyverno admission policy
+      ```
+
+      ```yaml
+      apiVersion: kyverno.io/v1
+      kind: ClusterPolicy
+      metadata:
+        name: require-image-scan
+      spec:
+        validationFailureAction: Enforce
+        rules:
+          - name: check-trivy-scan
+            match:
+              any:
+                - resources:
+                    kinds: ["Pod"]
+                    namespaceSelector:
+                      matchLabels:
+                        requires-scan: "true"
+            verifyImages:
+              - imageReferences: ["registry.internal/*"]
+                attestors:
+                  - entries:
+                      - keys:
+                          publicKeys: |-
+                            -----BEGIN PUBLIC KEY-----
+                            MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+                            -----END PUBLIC KEY-----
+      ```
+
+      ## SOC2 & HIPAA Compliance
+
+      For ML platforms processing healthcare or financial data:
+
+      - **SOC2 CC6.1 (Logical Access):** Enforce RBAC + SSO (OIDC) + MFA for cluster access.
+        Audit all kubectl and API server access via audit logging.
+      - **HIPAA §164.312(a)(1) (Access Control):** Namespace-level isolation with network
+        policies. Encrypt data at rest (LUKS for local NVMe, SSE-S3 for object storage) and
+        in transit (mTLS via service mesh).
+      - **Data Governance:** Tag datasets and models with classification labels. Use OPA/Gatekeeper
+        policies to prevent PHI-classified data from being mounted in non-compliant namespaces.
+
+      Audit logging should capture all GPU resource requests and data access patterns:
+
+      ```yaml
+      # Kubernetes audit policy for ML platform compliance
+      apiVersion: audit.k8s.io/v1
+      kind: Policy
+      rules:
+        - level: RequestResponse
+          resources:
+            - group: "kubeflow.org"
+              resources: ["pytorchjobs", "mpijobs"]
+          namespaces: ["team-*"]
+        - level: Metadata
+          resources:
+            - group: ""
+              resources: ["secrets"]
+        - level: None
+          resources:
+            - group: ""
+              resources: ["configmaps"]
+              resourceNames: ["kube-root-ca.crt"]
+      ```
+
+    exercises:
+      - id: "prof-mastery-security-q1"
+        title: "Network Policy for Training Isolation"
+        description: "In a Kubernetes NetworkPolicy that isolates distributed training pods, which port must be explicitly allowed in the INGRESS rules to prevent NCCL communication failures between workers?"
+        exercise_type: "quiz"
+        difficulty: 3
+        options:
+          - "Port 443 (HTTPS) for secure gradient exchange"
+          - "Port 22 (SSH) for MPI launcher connectivity"
+          - "Port 29500 (NCCL socket) for collective communication between workers"
+          - "Port 6443 (Kubernetes API) for pod discovery"
+        correct_answer: "Port 29500 (NCCL socket) for collective communication between workers"
+        hints:
+          - "NCCL (NVIDIA Collective Communication Library) uses socket-based transport as a fallback"
+          - "The default NCCL socket port is typically 29500, configured via NCCL_SOCKET_IFNAME"
+          - "Without this port open between training pods, all-reduce operations will hang or fail"
+        solution: "Port 29500 is the default NCCL socket interface port used for collective operations (all-reduce, all-gather, broadcast) between distributed training workers. When network policies block inter-pod traffic by default, this port must be explicitly allowed in ingress rules for pods with matching training labels. Port 443 is for external HTTPS; SSH (22) may be needed for MPI but not NCCL; and the Kubernetes API port (6443) is on the control plane, not between worker pods."
+
+      - id: "prof-mastery-security-lab1"
+        title: "Secure Multi-Tenant GPU Platform Configuration"
+        description: |
+          Design a complete security configuration for a multi-tenant GPU platform with three
+          teams (nlp, vision, speech):
+
+          1. Write RBAC manifests (ClusterRole + RoleBindings) that give each team:
+             - Full access to PyTorchJob/MPIJob resources in their own namespace
+             - Read-only access to pods and logs
+             - No access to secrets (managed by platform team)
+          2. Write a NetworkPolicy per namespace that:
+             - Allows NCCL traffic (ports 29400-29500) between same-namespace training pods
+             - Allows egress to internal object storage (10.0.50.0/24) on port 9000
+             - Allows DNS (UDP 53) to kube-system
+             - Denies all other ingress and egress
+          3. Write an ExternalSecret manifest that syncs Vault secrets for S3 credentials
+             into each team namespace with automatic 1-hour rotation.
+          4. Write a Kyverno policy that blocks any pod in gpu-* namespaces from using
+             images not prefixed with `registry.internal/`.
+
+          Validate that your RBAC does not accidentally grant cluster-wide permissions.
+        exercise_type: "lab"
+        difficulty: 4
+        hints:
+          - "Use RoleBinding (not ClusterRoleBinding) to scope permissions to specific namespaces"
+          - "NetworkPolicy podSelector with matchLabels ensures only training pods get NCCL access"
+          - "Kyverno's validate.pattern can match image strings with wildcards"
+          - "ExternalSecret refreshInterval controls rotation frequency"
+        solution: |
+          The RBAC configuration uses a single ClusterRole (ml-engineer) with rules for kubeflow.org resources (create, get, list, watch, delete), pods/logs (get, list, watch), and no secret access. Three RoleBindings (one per namespace: team-nlp, team-vision, team-speech) bind respective team groups to this role. The NetworkPolicy in each namespace sets policyTypes [Ingress, Egress], allows ingress from same-namespace pods on TCP 29400-29500, allows egress to 10.0.50.0/24:9000, DNS to kube-system on UDP 53, and has no other rules — effectively denying everything else. The ExternalSecret with refreshInterval: 1h syncs from vault-backend ClusterSecretStore, mapping keys like secret/data/teams/{team}/s3 to local secret names. The Kyverno ClusterPolicy uses a validate rule with pattern matching on spec.containers[*].image: "registry.internal/*" with validationFailureAction: Enforce, applied to namespaces matching label gpu-enabled: "true".
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Lesson 4: Performance Tuning at Scale
+  # ──────────────────────────────────────────────────────────────────────
+  - id: "performance-tuning-at-scale"
+    title: "Performance Tuning at Scale"
+    order: 4
+    objectives:
+      - "Configure NCCL environment variables to maximize distributed training throughput"
+      - "Optimize InfiniBand and RDMA settings for GPU-to-GPU communication"
+      - "Implement topology-aware scheduling for multi-node GPU workloads"
+      - "Apply mixed precision training and Flash Attention for compute efficiency"
+      - "Profile and diagnose performance bottlenecks in large-scale training jobs"
+    content_md: |
+      # Performance Tuning at Scale
+
+      Scaling from a single GPU to hundreds introduces performance bottlenecks at every layer:
+      interconnect bandwidth, collective communication patterns, memory hierarchy, and compute
+      efficiency. This lesson covers the critical tuning parameters and techniques that separate
+      a well-optimized distributed training pipeline from one that wastes 50% or more of its
+      theoretical throughput.
+
+      ## NCCL Tuning Variables
+
+      NCCL (NVIDIA Collective Communication Library) is the backbone of distributed training on
+      NVIDIA GPUs. Its behavior is controlled entirely through environment variables:
+
+      ```bash
+      # Essential NCCL environment variables for large-scale training
+      export NCCL_DEBUG=INFO                    # Enable debug logging (use WARN in production)
+      export NCCL_IB_DISABLE=0                  # Enable InfiniBand (set 1 to force TCP)
+      export NCCL_IB_HCA=mlx5                   # Specify InfiniBand HCA device prefix
+      export NCCL_IB_GID_INDEX=3                # RoCE GID index (for RoCE v2 over Ethernet)
+      export NCCL_IB_TIMEOUT=23                 # IB timeout (2^23 * 4.096us ≈ 34s)
+      export NCCL_IB_RETRY_CNT=7               # Retry count for IB operations
+
+      # Network and buffer tuning
+      export NCCL_SOCKET_IFNAME=eth0            # Socket interface for OOB communication
+      export NCCL_BUFFSIZE=8388608              # 8MB ring buffer (default 4MB)
+      export NCCL_NTHREADS=512                  # Threads per NCCL block (256-512)
+      export NCCL_MAX_NCHANNELS=32              # Max channels for parallel comm
+      export NCCL_MIN_NCHANNELS=16              # Min channels to ensure parallelism
+
+      # Algorithm selection
+      export NCCL_ALGO=Ring,Tree                # Allow both Ring and Tree algorithms
+      export NCCL_PROTO=LL128,LL,Simple         # Protocol preference order
+
+      # Cross-node optimization
+      export NCCL_CROSS_NIC=1                   # Allow cross-NIC communication
+      export NCCL_NET_GDR_LEVEL=SYS             # GPUDirect RDMA level (PHB, SYS)
+      export NCCL_P2P_LEVEL=NVL                 # P2P via NVLink when available
+      ```
+
+      The `NCCL_ALGO` variable is particularly important. For small messages, the **Tree**
+      algorithm achieves lower latency (O(log N) steps). For large tensors (gradient
+      all-reduce), the **Ring** algorithm achieves optimal bandwidth utilization. NCCL
+      auto-selects based on message size, but you can force a specific algorithm for
+      benchmarking.
+
+      ## InfiniBand & RDMA Optimization
+
+      InfiniBand provides 200-400 Gb/s bandwidth with microsecond-level latency. Proper
+      configuration is essential:
+
+      ```bash
+      # Verify InfiniBand link status and speed
+      ibstat mlx5_0 | grep -E "State|Rate|Port"
+      # Expected: State: Active, Rate: 200 (HDR) or 400 (NDR)
+
+      # Check RDMA device capabilities
+      ibv_devinfo -d mlx5_0 | grep -E "max_qp|max_cq|max_mr"
+
+      # Benchmark RDMA write bandwidth between two nodes
+      # Server:
+      ib_write_bw -d mlx5_0 --report_gbits -D 10
+      # Client:
+      ib_write_bw -d mlx5_0 --report_gbits -D 10 <server-ip>
+      # Expected: ~190 Gb/s for HDR, ~380 Gb/s for NDR
+
+      # Verify GPUDirect RDMA is active
+      nvidia-smi topo -m
+      # Look for "NV#" (NVLink) and "SYS" (cross-socket via PCIe/IB)
+      ```
+
+      **GPUDirect RDMA** allows InfiniBand NICs to read/write GPU memory directly, bypassing
+      the CPU. This eliminates a memory copy and reduces latency by ~50%:
+
+      ```
+      Without GPUDirect:     GPU ──► CPU RAM ──► NIC ──► Network ──► NIC ──► CPU RAM ──► GPU
+      With GPUDirect RDMA:   GPU ──────────────► NIC ──► Network ──► NIC ──────────────► GPU
+      ```
+
+      ## Topology-Aware Scheduling
+
+      GPU node topology matters enormously. An 8xH100 DGX node has NVLink within the node
+      (~900 GB/s bisection) but relies on InfiniBand between nodes (~50 GB/s). Scheduling
+      should co-locate communicating ranks:
+
+      ```yaml
+      # Topology-aware scheduling with pod affinity
+      apiVersion: kubeflow.org/v1
+      kind: PyTorchJob
+      metadata:
+        name: llm-training-70b
+      spec:
+        elasticPolicy:
+          rdzvBackend: etcd
+          minReplicas: 4
+          maxReplicas: 8
+        pytorchReplicaSpecs:
+          Worker:
+            replicas: 8
+            template:
+              spec:
+                affinity:
+                  podAntiAffinity:
+                    preferredDuringSchedulingIgnoredDuringExecution: []
+                  podAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                      - labelSelector:
+                          matchExpressions:
+                            - key: training.kubeflow.org/job-name
+                              operator: In
+                              values: ["llm-training-70b"]
+                        topologyKey: topology.kubernetes.io/rack
+                  nodeAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                      nodeSelectorTerms:
+                        - matchExpressions:
+                            - key: nvidia.com/gpu.product
+                              operator: In
+                              values: ["NVIDIA-H100-80GB-HBM3"]
+                schedulerName: volcano
+                containers:
+                  - name: worker
+                    image: registry.internal/llm-training:v3.2
+                    resources:
+                      limits:
+                        nvidia.com/gpu: 8
+                        rdma/rdma_shared_device_a: 1
+                    env:
+                      - name: NCCL_IB_HCA
+                        value: "mlx5"
+                      - name: NCCL_TOPO_DUMP_FILE
+                        value: "/var/run/nvidia/nccl-topo.xml"
+      ```
+
+      ## Mixed Precision & Flash Attention
+
+      Compute efficiency is as important as communication efficiency:
+
+      ```python
+      import torch
+      from torch.cuda.amp import GradScaler
+      from flash_attn import flash_attn_func
+
+      # Mixed precision training with BF16 (preferred on H100/A100)
+      scaler = GradScaler(enabled=True)
+
+      for batch in dataloader:
+          optimizer.zero_grad()
+
+          with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+              # Flash Attention v2 — O(N) memory instead of O(N^2)
+              # Input shapes: (batch, seqlen, nheads, headdim)
+              q = model.q_proj(batch["input_ids"])
+              k = model.k_proj(batch["input_ids"])
+              v = model.v_proj(batch["input_ids"])
+
+              # Flash attention: 2-4x faster than standard attention
+              attn_output = flash_attn_func(
+                  q, k, v,
+                  dropout_p=0.0 if not model.training else 0.1,
+                  softmax_scale=None,  # defaults to 1/sqrt(headdim)
+                  causal=True,         # autoregressive mask
+              )
+
+              loss = model.compute_loss(attn_output, batch["labels"])
+
+          # Scale loss and backward pass in mixed precision
+          scaler.scale(loss).backward()
+          scaler.unscale_(optimizer)
+          torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+          scaler.step(optimizer)
+          scaler.update()
+      ```
+
+      **Flash Attention** reduces memory from O(N²) to O(N) and avoids materializing the full
+      attention matrix. On a 4096-token sequence with 32 heads, this saves ~2GB of activation
+      memory per layer and provides 2-4x wall-clock speedup.
+
+      **Performance Profiling Workflow:**
+
+      ```bash
+      # 1. Profile with NVIDIA Nsight Systems
+      nsys profile -t cuda,nvtx -o training_profile \
+        --capture-range=cudaProfilerApi \
+        python train.py --profile-steps 10-20
+
+      # 2. Analyze the trace
+      nsys stats training_profile.nsys-rep --report cuda_gpu_trace
+
+      # 3. Check for communication bottlenecks
+      grep -E "ncclAllReduce|ncclBroadcast" training_profile.sqlite \
+        | awk '{sum+=$NF; count++} END {print "Avg NCCL time:", sum/count, "ms"}'
+      ```
+
+    exercises:
+      - id: "prof-mastery-perf-tuning-q1"
+        title: "NCCL Algorithm Selection"
+        description: "For a gradient all-reduce operation on large tensors (>256MB) across 64 GPUs, which NCCL algorithm provides the BEST bandwidth utilization?"
+        exercise_type: "quiz"
+        difficulty: 3
+        options:
+          - "Tree algorithm — it minimizes latency with O(log N) steps"
+          - "Ring algorithm — it achieves near-optimal bandwidth with N-1/N efficiency"
+          - "Recursive halving-doubling — it balances latency and bandwidth"
+          - "Direct all-to-all — it sends data directly between all pairs"
+        correct_answer: "Ring algorithm — it achieves near-optimal bandwidth with N-1/N efficiency"
+        hints:
+          - "Large tensor transfers are bandwidth-bound, not latency-bound"
+          - "The Ring algorithm divides data into N chunks and pipelines them through the ring"
+          - "Ring achieves (N-1)/N bandwidth utilization, which approaches 100% as N grows"
+        solution: "For large tensors (>256MB), the Ring algorithm provides the best bandwidth utilization because it pipelines data in N-1 steps, each transferring 1/N of the total data. This achieves (N-1)/N ≈ 98.4% bandwidth efficiency with 64 GPUs. The Tree algorithm is better for small messages where latency (O(log N) vs O(N) steps) dominates. Recursive halving-doubling is a theoretical construct not directly used in NCCL. Direct all-to-all would create N² communication pairs and congest the network."
+
+      - id: "prof-mastery-perf-tuning-code1"
+        title: "NCCL Environment Configuration Generator"
+        description: |
+          Write a Python function `generate_nccl_config` that produces an optimized set of NCCL
+          environment variables based on cluster hardware:
+
+          Parameters:
+            - num_nodes (int): Number of nodes in the cluster
+            - gpus_per_node (int): GPUs per node (typically 4 or 8)
+            - interconnect (str): One of "infiniband_hdr", "infiniband_ndr", "roce", "tcp"
+            - gpu_model (str): One of "a100", "h100", "a10g"
+
+          The function should return a dict[str, str] of environment variable names to values with
+          these rules:
+            - If interconnect is infiniband_*, set NCCL_IB_DISABLE=0, NCCL_IB_HCA=mlx5,
+              NCCL_NET_GDR_LEVEL=SYS, NCCL_IB_TIMEOUT=23, NCCL_IB_RETRY_CNT=7
+            - If interconnect is "infiniband_ndr", additionally set NCCL_IB_QPS_PER_CONNECTION=4
+            - If interconnect is "roce", set NCCL_IB_DISABLE=0, NCCL_IB_GID_INDEX=3,
+              NCCL_IB_ROCE_ENABLE=1
+            - If interconnect is "tcp", set NCCL_IB_DISABLE=1, NCCL_SOCKET_IFNAME=eth0
+            - Always set NCCL_BUFFSIZE=8388608 for >=16 total GPUs, else 4194304
+            - Set NCCL_MAX_NCHANNELS to min(32, gpus_per_node * 4)
+            - For h100 GPUs, set NCCL_P2P_LEVEL=NVL; for a100, set NCCL_P2P_LEVEL=SYS
+            - Always include NCCL_DEBUG=WARN
+        exercise_type: "coding"
+        difficulty: 3
+        hints:
+          - "Start with a base config dict and conditionally update it based on parameters"
+          - "Use str(value) to ensure all dict values are strings"
+          - "interconnect.startswith('infiniband') catches both HDR and NDR variants"
+        solution: |
+          ```python
+          def generate_nccl_config(
+              num_nodes: int,
+              gpus_per_node: int,
+              interconnect: str,
+              gpu_model: str,
+          ) -> dict[str, str]:
+              total_gpus = num_nodes * gpus_per_node
+              config = {"NCCL_DEBUG": "WARN"}
+
+              # Buffer size based on cluster scale
+              config["NCCL_BUFFSIZE"] = str(8388608 if total_gpus >= 16 else 4194304)
+              config["NCCL_MAX_NCHANNELS"] = str(min(32, gpus_per_node * 4))
+
+              # Interconnect-specific settings
+              if interconnect.startswith("infiniband"):
+                  config["NCCL_IB_DISABLE"] = "0"
+                  config["NCCL_IB_HCA"] = "mlx5"
+                  config["NCCL_NET_GDR_LEVEL"] = "SYS"
+                  config["NCCL_IB_TIMEOUT"] = "23"
+                  config["NCCL_IB_RETRY_CNT"] = "7"
+                  if interconnect == "infiniband_ndr":
+                      config["NCCL_IB_QPS_PER_CONNECTION"] = "4"
+              elif interconnect == "roce":
+                  config["NCCL_IB_DISABLE"] = "0"
+                  config["NCCL_IB_GID_INDEX"] = "3"
+                  config["NCCL_IB_ROCE_ENABLE"] = "1"
+              elif interconnect == "tcp":
+                  config["NCCL_IB_DISABLE"] = "1"
+                  config["NCCL_SOCKET_IFNAME"] = "eth0"
+
+              # GPU-specific P2P settings
+              if gpu_model == "h100":
+                  config["NCCL_P2P_LEVEL"] = "NVL"
+              elif gpu_model == "a100":
+                  config["NCCL_P2P_LEVEL"] = "SYS"
+
+              return config
+          ```
+
+      - id: "prof-mastery-perf-tuning-lab1"
+        title: "End-to-End Performance Profiling and Optimization"
+        description: |
+          Perform a complete performance tuning exercise for a distributed training workload:
+
+          1. Write a shell script that uses `nvidia-smi`, `dcgmi dmon`, and `ibstat` to collect
+             baseline metrics: GPU utilization, memory bandwidth, tensor core activity, and
+             InfiniBand link rate. Output results as a structured JSON report.
+          2. Create a PyTorchJob manifest for an 8-node, 64-GPU training job with:
+             - Topology-aware pod affinity (same rack preferred)
+             - Complete NCCL environment configuration for InfiniBand NDR
+             - Resource requests including rdma/rdma_shared_device_a
+             - Volcano scheduler with gang-scheduling (all 8 pods or none)
+          3. Write a Python profiling wrapper that:
+             - Measures per-step training time (forward, backward, optimizer, NCCL)
+             - Logs MFU (Model FLOPS Utilization) computed as actual_flops / peak_flops
+             - Detects communication bottlenecks when NCCL time > 30% of step time
+             - Outputs a summary CSV with columns: step, forward_ms, backward_ms,
+               nccl_ms, optimizer_ms, total_ms, mfu_pct
+
+          Target: achieve >50% MFU on a hypothetical 64-GPU H100 cluster.
+        exercise_type: "lab"
+        difficulty: 5
+        hints:
+          - "Use nvidia-smi --query-gpu=utilization.gpu,utilization.memory,memory.used --format=csv for structured GPU data"
+          - "DCGM field IDs: 203=GPU_UTIL, 1001=FP16_ACTIVE, 1002=TENSOR_ACTIVE"
+          - "H100 SXM peak BF16 is ~990 TFLOPS; MFU = measured_tflops / (num_gpus * 990)"
+          - "Wrap torch.cuda.Event with synchronize() for accurate per-phase timing"
+        solution: |
+          The shell script uses nvidia-smi CSV output and ibstat parsed with awk, outputting JSON via jq. The PyTorchJob spec includes podAffinity with topologyKey: topology.kubernetes.io/rack, nodeAffinity for H100 nodes, env vars for NCCL_IB_HCA=mlx5, NCCL_NET_GDR_LEVEL=SYS, NCCL_IB_QPS_PER_CONNECTION=4, NCCL_BUFFSIZE=8388608, and schedulerName: volcano with a PodGroup annotation for minMember: 8. The Python profiler creates torch.cuda.Events around each phase (forward, backward, NCCL, optimizer), calls synchronize, and computes elapsed_time_ms. MFU is calculated as (model_flops_per_step * steps_per_second) / (64 * 990e12) * 100. When nccl_ms/total_ms > 0.3, it logs a warning suggesting gradient compression or increasing NCCL channels.
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Lesson 5: Platform Architecture Design
+  # ──────────────────────────────────────────────────────────────────────
+  - id: "platform-architecture-design"
+    title: "Platform Architecture Design"
+    order: 5
+    objectives:
+      - "Design reference architectures for enterprise AI/HPC platforms"
+      - "Perform capacity planning for GPU clusters based on workload projections"
+      - "Architect disaster recovery and business continuity for ML platforms"
+      - "Analyze real-world platform designs from Meta, Google, and Microsoft"
+    content_md: |
+      # Platform Architecture Design
+
+      Designing an AI/HPC platform that serves hundreds of researchers, handles petabytes of
+      data, and manages thousands of GPUs requires thinking across every layer of the stack.
+      This lesson synthesizes the course material into cohesive reference architectures and
+      studies how the world's leading AI organizations design their platforms.
+
+      ## Reference Architecture: Enterprise AI Platform
+
+      A production AI platform consists of five layers:
+
+      ```
+      ┌─────────────────────────────────────────────────────────────────────┐
+      │                        User Interface Layer                        │
+      │  ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌──────────────┐   │
+      │  │ JupyterHub│  │ MLflow UI    │  │ Grafana  │  │ CLI / SDK    │   │
+      │  └──────────┘  └──────────────┘  └──────────┘  └──────────────┘   │
+      ├─────────────────────────────────────────────────────────────────────┤
+      │                     Workflow & Orchestration                        │
+      │  ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌──────────────┐   │
+      │  │ Kubeflow │  │ Argo Workflows│  │ Airflow  │  │ Ray Clusters │   │
+      │  │ Training │  │  Pipelines   │  │  DAGs    │  │  (Serve/Tune)│   │
+      │  └──────────┘  └──────────────┘  └──────────┘  └──────────────┘   │
+      ├─────────────────────────────────────────────────────────────────────┤
+      │                    Resource Management Layer                        │
+      │  ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌──────────────┐   │
+      │  │Kubernetes│  │   Volcano    │  │ Karpenter│  │ GPU Operator │   │
+      │  │  (EKS/   │  │  Gang Sched  │  │ Autoscale│  │ MIG / MPS   │   │
+      │  │  GKE)    │  │  Fair Share  │  │          │  │              │   │
+      │  └──────────┘  └──────────────┘  └──────────┘  └──────────────┘   │
+      ├─────────────────────────────────────────────────────────────────────┤
+      │                      Data & Storage Layer                          │
+      │  ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌──────────────┐   │
+      │  │ S3/GCS   │  │ Lustre/GPFS  │  │ NVMe     │  │ Feature Store│   │
+      │  │ (bulk)   │  │ (parallel)   │  │ (local)  │  │ (Feast)      │   │
+      │  └──────────┘  └──────────────┘  └──────────┘  └──────────────┘   │
+      ├─────────────────────────────────────────────────────────────────────┤
+      │                     Infrastructure Layer                            │
+      │  ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌──────────────┐   │
+      │  │ DGX/HGX  │  │ InfiniBand   │  │ Power &  │  │ BMC/Redfish  │   │
+      │  │ GPU Nodes│  │ Fabric       │  │ Cooling  │  │ Management   │   │
+      │  └──────────┘  └──────────────┘  └──────────┘  └──────────────┘   │
+      └─────────────────────────────────────────────────────────────────────┘
+      ```
+
+      ## Capacity Planning
+
+      GPU capacity planning must account for multiple workload types with different resource
+      profiles and scheduling characteristics:
+
+      ```python
+      from dataclasses import dataclass
+      from typing import List
+
+      @dataclass
+      class WorkloadProfile:
+          name: str
+          gpu_count: int           # GPUs per job
+          avg_duration_hours: float
+          jobs_per_week: int
+          priority: int            # 1=highest
+
+      @dataclass
+      class CapacityPlan:
+          total_gpu_hours_weekly: float
+          peak_concurrent_gpus: int
+          recommended_gpus: int
+          utilization_target: float
+
+      def plan_capacity(
+          workloads: List[WorkloadProfile],
+          target_utilization: float = 0.70,
+          peak_to_avg_ratio: float = 2.5,
+      ) -> CapacityPlan:
+          """Compute required GPU capacity from workload projections."""
+          total_gpu_hours = sum(
+              w.gpu_count * w.avg_duration_hours * w.jobs_per_week
+              for w in workloads
+          )
+          # Average concurrent GPUs needed
+          avg_concurrent = total_gpu_hours / (7 * 24)  # hours in a week
+          # Peak estimate using multiplier
+          peak_concurrent = int(avg_concurrent * peak_to_avg_ratio)
+          # Recommended capacity accounts for target utilization headroom
+          recommended = int(peak_concurrent / target_utilization)
+          # Round up to nearest node boundary (8 GPUs per node)
+          recommended = ((recommended + 7) // 8) * 8
+
+          return CapacityPlan(
+              total_gpu_hours_weekly=round(total_gpu_hours, 1),
+              peak_concurrent_gpus=peak_concurrent,
+              recommended_gpus=recommended,
+              utilization_target=target_utilization,
+          )
+
+      # Example: plan for a mid-size AI org
+      workloads = [
+          WorkloadProfile("LLM Pre-training", 64, 72.0, 2, priority=1),
+          WorkloadProfile("Fine-tuning", 8, 4.0, 50, priority=2),
+          WorkloadProfile("Inference Dev", 1, 2.0, 200, priority=3),
+          WorkloadProfile("Hyperparameter Sweep", 4, 6.0, 30, priority=2),
+      ]
+      plan = plan_capacity(workloads)
+      # total_gpu_hours_weekly ≈ 9,920 + 1,600 + 400 + 720 = 12,640
+      # avg_concurrent ≈ 75.2 GPUs
+      # peak_concurrent ≈ 188 GPUs
+      # recommended ≈ 272 GPUs (34 nodes × 8 GPUs)
+      ```
+
+      ## Disaster Recovery for ML Platforms
+
+      ML platform DR differs from traditional application DR because of the unique assets:
+
+      - **Training State:** Active training jobs cannot be trivially migrated. Checkpoint to
+        durable storage (S3, GCS) every N steps. Recovery means restarting from the last
+        checkpoint — plan for lost compute time.
+      - **Model Registry:** MLflow, Weights & Biases, or custom registries contain irreplaceable
+        model artifacts. Replicate across regions with object storage replication.
+      - **Training Data:** Often terabytes to petabytes. Use cross-region replication for
+        critical datasets. Accept that full dataset recovery may take days — prioritize the
+        most active datasets.
+
+      **DR Tier Classification:**
+
+      ```
+      Tier  │  Asset               │  RPO      │  RTO       │  Strategy
+      ──────┼──────────────────────┼───────────┼────────────┼────────────────────
+      1     │  Model Registry      │  1 hour   │  4 hours   │  Cross-region replication
+      2     │  Training Checkpoints│  1 step   │  30 min    │  Multi-region object store
+      3     │  Training Data       │  24 hours │  48 hours  │  Async replication
+      4     │  Dev Environments    │  7 days   │  24 hours  │  GitOps rebuild
+      ```
+
+      ## Case Studies
+
+      **Meta's Research SuperCluster (RSC):**
+      Meta built RSC with 2,000 A100 GPUs connected via InfiniBand NDR. Key design choices:
+      - Fully air-gapped network for security (no internet access from GPU nodes)
+      - Custom job scheduler integrated with their FairSeq training framework
+      - Lustre parallel file system for training data at 16 TB/s aggregate bandwidth
+      - Designed for models with >1 trillion parameters using 4D parallelism
+
+      **Google's TPU Pods and Pathways:**
+      Google's approach uses custom TPU accelerators in pod configurations (up to 4,096 TPU v5p
+      chips). The Pathways system enables a single training job to span multiple TPU pods with
+      heterogeneous parallelism strategies. Key insight: tight integration between hardware,
+      compiler (XLA), and framework (JAX) enables optimizations impossible on commodity hardware.
+
+      **Microsoft Azure's AI Infrastructure:**
+      Azure's ND-series VMs use custom InfiniBand fabrics. Their Singularity platform implements
+      global scheduling across all GPU clusters worldwide, enabling preemptive job placement
+      based on real-time availability. Key innovation: transparent checkpoint-resume that allows
+      jobs to be migrated between clusters without user intervention — NCCL state is serialized
+      and restored on the target cluster.
+
+      These case studies share common themes: invest in high-bandwidth interconnects, build
+      fault tolerance into every layer, use custom scheduling for GPU-specific constraints, and
+      treat the platform as a product with SLAs for internal customers.
+
+    exercises:
+      - id: "prof-mastery-platform-arch-proj1"
+        title: "Enterprise AI Platform Architecture Design Document"
+        description: |
+          Design a complete AI/HPC platform for a hypothetical company with these requirements:
+
+          - 500 ML engineers across 10 teams
+          - Workloads: LLM pre-training (up to 256 GPUs), fine-tuning, inference, notebooks
+          - Budget: $15M annual GPU compute budget
+          - Compliance: SOC2 Type II required
+          - Availability: 99.9% platform uptime SLA
+          - Hybrid: 60% on-prem, 40% cloud burst capacity
+
+          Deliverables:
+          1. Architecture diagram (ASCII or description) showing all five layers from the
+             reference architecture, with specific technology choices justified.
+          2. Capacity plan: compute total GPU-hours, recommend cluster size (on-prem + cloud),
+             and specify node types (DGX H100 vs. cloud instances).
+          3. Networking design: InfiniBand topology for on-prem, cloud interconnect for burst,
+             and hybrid connectivity (VPN/Direct Connect).
+          4. Storage architecture: tiered storage with parallel FS, object store, and local NVMe.
+             Include bandwidth calculations for a 256-GPU training job reading 50TB dataset.
+          5. DR plan with RPO/RTO for each asset tier.
+          6. Cost breakdown: on-prem capex (amortized), cloud opex, networking, storage, staff.
+          7. 12-month implementation roadmap with phased delivery.
+
+          This should be a production-quality architecture document (3000+ words).
+        exercise_type: "project"
+        difficulty: 5
+        hints:
+          - "$15M/year budget: A DGX H100 system (8xH100) costs ~$300K. That buys ~30 nodes (240 GPUs) on-prem with remaining budget for cloud, storage, networking, and staff"
+          - "For 256-GPU training, you need InfiniBand NDR with fat-tree topology (non-blocking)"
+          - "SOC2 requires documented access controls, audit logging, encryption, and incident response procedures"
+          - "99.9% uptime = ~8.7 hours downtime/year. Plan for rolling upgrades and node failure tolerance"
+          - "Lustre parallel FS can deliver ~1 TB/s aggregate; 256 GPUs each reading at 3 GB/s need 768 GB/s"
+        solution: |
+          A strong architecture document would include: Infrastructure Layer — 30 DGX H100 nodes (240 on-prem GPUs) with InfiniBand NDR400 in a 2-level fat-tree topology, plus Karpenter-managed cloud burst to p5.48xlarge spot instances up to 160 cloud GPUs. Resource Management — Kubernetes (RKE2 on-prem, EKS for cloud) with Volcano scheduler for gang scheduling, Kueue for fair-share queuing across 10 teams. Storage — Lustre (DDN EXAScaler) with 1.2 TB/s aggregate for training, S3-compatible object store (MinIO) for checkpoints/models, local NVMe scratch on each node. Networking — NDR400 InfiniBand with SHARP in-network reduction, AWS Direct Connect 100G for cloud burst, Tailscale mesh for management. Security — OIDC with Okta, namespace-per-team RBAC, Kyverno admission policies, Trivy scanning, Vault for secrets. DR — Model registry replicated to S3 cross-region (RPO 1hr), checkpoints on multi-region object store, GitOps for platform rebuild (RTO 4hr). Cost — $9M on-prem capex amortized over 3yr ($3M/yr), $7.2M cloud, $2.4M storage/networking, $2.4M staff (8 platform engineers) = $15M total. Roadmap — Months 1-3: procurement, DC prep, Kubernetes setup; Months 4-6: storage, networking, security; Months 7-9: onboard first 3 teams, iterate; Months 10-12: full production, cloud burst, DR testing.
+
+      - id: "prof-mastery-platform-arch-proj2"
+        title: "Platform Migration & Modernization Plan"
+        description: |
+          A company is migrating from a legacy HPC environment to a modern Kubernetes-based AI
+          platform. Current state:
+
+          - 50 bare-metal GPU servers (8x V100 each = 400 GPUs) managed by Slurm
+          - Lustre parallel file system (500 TB, 200 GB/s)
+          - 200 users submitting jobs via sbatch scripts
+          - No container usage; all dependencies installed via environment modules
+          - Single-tenant — no namespace isolation
+          - No GPU monitoring or chargeback
+
+          Design the migration plan:
+
+          1. Target state architecture on Kubernetes with backward compatibility for
+             existing Slurm users during transition (consider Slurm-on-K8s bridges like
+             Sunk or Slurm-GKE).
+          2. Containerization strategy: how to convert environment modules to container
+             images without disrupting researchers. Include a Dockerfile template for common
+             ML frameworks and a migration guide.
+          3. Storage migration: how to integrate existing Lustre with Kubernetes (CSI drivers,
+             mount strategies) while adding object storage for cloud readiness.
+          4. Monitoring stack design: Prometheus + DCGM exporter + Grafana dashboards for
+             GPU utilization, job metrics, and per-team chargeback.
+          5. User onboarding plan: phased migration of 200 users in cohorts, with training
+             materials, office hours, and a compatibility layer that accepts sbatch-like
+             commands but translates to Kubernetes jobs.
+          6. Risk register: top 10 migration risks with mitigation strategies.
+          7. Success metrics: KPIs to measure migration success (GPU utilization improvement,
+             user satisfaction, time-to-first-GPU, job queue wait time).
+
+          Deliver as a structured migration plan with timelines and decision points.
+        exercise_type: "project"
+        difficulty: 5
+        hints:
+          - "A Slurm-to-K8s bridge lets users keep using sbatch while jobs actually run on Kubernetes — this is critical for adoption"
+          - "Environment modules can be mapped to container tags: 'module load pytorch/2.1' becomes 'image: ml-base:pytorch-2.1'"
+          - "Lustre CSI driver (DDN Lustre CSI) mounts existing Lustre into Kubernetes pods with ReadWriteMany access"
+          - "DCGM exporter exposes GPU metrics as Prometheus endpoints — deploy as a DaemonSet"
+          - "Phase users by team: start with the most technically advanced team, get feedback, then expand"
+        solution: |
+          The migration plan phases over 9 months. Phase 1 (Months 1-2): Deploy Kubernetes alongside existing Slurm (parallel operation). Install Lustre CSI driver so both systems access the same data. Deploy monitoring stack (Prometheus, DCGM exporter, Grafana). Phase 2 (Months 3-4): Build container images matching current environment modules using multi-stage Dockerfiles (base CUDA image + framework layers). Deploy sbatch compatibility wrapper (a CLI tool that parses sbatch scripts and generates equivalent Kubernetes Job manifests). Migrate first cohort (power users, 20 people) with dedicated support. Phase 3 (Months 5-6): Introduce namespaces and RBAC per team. Enable GPU chargeback using DCGM metrics. Add object storage (MinIO) alongside Lustre. Migrate second and third cohorts (80 people). Phase 4 (Months 7-9): Migrate remaining users. Decommission Slurm. Implement advanced features (Volcano scheduling, Kueue fair-share, autoscaling). Risk register includes: data loss during storage changes (mitigate: read-only Lustre period), researcher productivity loss (mitigate: parallel operation, compatibility layer), GPU underutilization during transition (mitigate: phased approach with monitoring), skill gap (mitigate: training program). Success KPIs: GPU utilization >60% (up from ~35%), median queue wait <15 min, user NPS >30, time-to-first-GPU <5 min for interactive jobs.

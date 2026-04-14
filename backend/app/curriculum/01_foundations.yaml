@@ -1,0 +1,620 @@
+id: "foundations"
+title: "Computing Foundations"
+description: "Build a solid foundation in Linux, Python, networking, Git, and shell scripting — the essential skills every AI platform engineer needs."
+level: "beginner"
+order: 1
+estimated_hours: 12
+prerequisites: []
+skills: ["Linux", "Python", "Networking"]
+lessons:
+  - id: "linux-cli"
+    title: "Linux Command Line Mastery"
+    order: 1
+    objectives:
+      - "Navigate the Linux filesystem confidently"
+      - "Manipulate files and directories with core commands"
+      - "Use pipes, redirects, and process management"
+      - "Understand file permissions and ownership"
+    content_md: |
+      # Linux Command Line Mastery
+
+      Almost every HPC cluster and AI training platform runs Linux. Mastering the command line is not optional — it is the foundation everything else builds on.
+
+      ## Navigating the Filesystem
+
+      The Linux filesystem is a tree rooted at `/`. Key directories:
+
+      ```
+      /           Root of everything
+      /home       User home directories
+      /etc        System configuration files
+      /var        Variable data (logs, caches)
+      /tmp        Temporary files
+      /opt        Optional/third-party software
+      /proc       Virtual filesystem for process info
+      /dev        Device files
+      ```
+
+      Essential navigation commands:
+
+      ```bash
+      pwd                    # Print working directory
+      ls -lah                # List files with details and human-readable sizes
+      cd /path/to/dir        # Change directory
+      cd ~                   # Go to home directory
+      cd -                   # Go to previous directory
+      tree -L 2              # Show directory tree, 2 levels deep
+      ```
+
+      ## File Operations
+
+      ```bash
+      cp source dest         # Copy file
+      cp -r dir1 dir2        # Copy directory recursively
+      mv old new             # Move or rename
+      rm file                # Remove file
+      rm -rf directory       # Remove directory (DANGEROUS — no undo!)
+      mkdir -p a/b/c         # Create nested directories
+      touch newfile.txt      # Create empty file or update timestamp
+      ln -s target link      # Create symbolic link
+      ```
+
+      ## Viewing and Searching File Contents
+
+      ```bash
+      cat file.txt           # Print entire file
+      less file.txt          # Paginated viewer (q to quit)
+      head -n 20 file.txt    # First 20 lines
+      tail -f logfile.log    # Follow log file in real-time
+      grep -rn "pattern" .   # Search recursively with line numbers
+      find . -name "*.py"    # Find files by name
+      wc -l file.txt         # Count lines
+      ```
+
+      ## Pipes and Redirects
+
+      Pipes (`|`) connect the output of one command to the input of another. This is one of Linux's most powerful features:
+
+      ```bash
+      # Count Python files in a project
+      find . -name "*.py" | wc -l
+
+      # Find the 10 largest files
+      du -ah . | sort -rh | head -10
+
+      # Search logs for errors and count occurrences
+      grep "ERROR" /var/log/app.log | sort | uniq -c | sort -rn
+
+      # Redirect output to a file
+      ls -la > filelist.txt      # Overwrite
+      echo "append" >> file.txt  # Append
+      command 2>&1               # Redirect stderr to stdout
+      command > out.log 2>&1     # Redirect both to file
+      ```
+
+      ## File Permissions
+
+      Every file has an owner, a group, and three sets of permissions (read, write, execute):
+
+      ```
+      -rwxr-xr--  1 user group  4096 Jan 1 12:00 script.sh
+      │├─┤├─┤├─┤
+      │ │   │  └── Others: read only
+      │ │   └───── Group: read + execute
+      │ └───────── Owner: read + write + execute
+      └──────────── File type (- = regular, d = directory, l = symlink)
+      ```
+
+      ```bash
+      chmod 755 script.sh     # rwxr-xr-x
+      chmod +x script.sh      # Add execute permission
+      chmod u+w,g-w file      # Add write for owner, remove for group
+      chown user:group file   # Change ownership
+      ```
+
+      ## Process Management
+
+      ```bash
+      ps aux                  # List all processes
+      ps aux | grep python    # Find Python processes
+      top                     # Interactive process viewer
+      htop                    # Better interactive viewer
+      kill PID                # Graceful terminate
+      kill -9 PID             # Force kill
+      nohup command &         # Run in background, survives logout
+      jobs                    # List background jobs
+      fg %1                   # Bring job 1 to foreground
+      ```
+
+    exercises:
+      - id: "foundations-linux-q1"
+        title: "Pipe Command Quiz"
+        description: "Which command chain finds the 5 largest files in the current directory tree?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "ls -la | head -5"
+          - "du -ah . | sort -rh | head -5"
+          - "find . -size +100M"
+          - "df -h | sort -rh | head -5"
+        correct_answer: "du -ah . | sort -rh | head -5"
+        hints:
+          - "du reports disk usage, sort -rh sorts by size descending, head limits output"
+        solution: "du -ah . | sort -rh | head -5"
+
+      - id: "foundations-linux-q2"
+        title: "Permission Decode"
+        description: "What octal permission value gives the owner full access, the group read+execute, and others no access?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "755"
+          - "750"
+          - "700"
+          - "644"
+        correct_answer: "750"
+        hints:
+          - "Full = 7 (rwx), read+execute = 5 (r-x), none = 0 (---)"
+        solution: "750"
+
+      - id: "foundations-linux-code1"
+        title: "Log Analysis Script"
+        description: "Write a one-liner that extracts all unique IP addresses from an nginx access log and counts how many requests each made, sorted by count descending."
+        exercise_type: "coding"
+        difficulty: 3
+        hints:
+          - "awk can extract the first field (IP) from each line"
+          - "sort | uniq -c counts duplicates"
+          - "sort -rn sorts numerically in reverse"
+        solution: "awk '{print $1}' access.log | sort | uniq -c | sort -rn"
+
+  - id: "python-infra"
+    title: "Python for Infrastructure"
+    order: 2
+    objectives:
+      - "Use subprocess to run system commands from Python"
+      - "Work with os, pathlib, and shutil for file operations"
+      - "Build CLI tools with argparse"
+      - "Write infrastructure automation scripts"
+    content_md: |
+      # Python for Infrastructure
+
+      Python is the glue language of AI infrastructure. You will use it to automate deployments, parse configurations, manage clusters, and build tooling.
+
+      ## Running System Commands
+
+      ```python
+      import subprocess
+
+      # Simple command execution
+      result = subprocess.run(
+          ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv"],
+          capture_output=True, text=True, check=True
+      )
+      print(result.stdout)
+
+      # With shell features (pipes, globs)
+      result = subprocess.run(
+          "ps aux | grep python | wc -l",
+          shell=True, capture_output=True, text=True
+      )
+      print(f"Python processes: {result.stdout.strip()}")
+      ```
+
+      ## File System Operations with pathlib
+
+      ```python
+      from pathlib import Path
+
+      # Modern path handling
+      config_dir = Path.home() / ".config" / "myapp"
+      config_dir.mkdir(parents=True, exist_ok=True)
+
+      # Iterate over files
+      for py_file in Path("/project").rglob("*.py"):
+          print(f"{py_file}: {py_file.stat().st_size} bytes")
+
+      # Read and write
+      config = config_dir / "settings.yaml"
+      config.write_text("key: value\n")
+      content = config.read_text()
+      ```
+
+      ## Building CLI Tools
+
+      ```python
+      import argparse
+
+      def main():
+          parser = argparse.ArgumentParser(description="GPU Monitor")
+          parser.add_argument("--interval", type=int, default=5,
+                              help="Polling interval in seconds")
+          parser.add_argument("--output", type=Path, default=None,
+                              help="Output file for metrics")
+          parser.add_argument("--gpus", nargs="+", type=int,
+                              help="GPU indices to monitor")
+          args = parser.parse_args()
+
+          # Use args.interval, args.output, args.gpus
+          print(f"Monitoring GPUs every {args.interval}s")
+
+      if __name__ == "__main__":
+          main()
+      ```
+
+      ## Environment and Configuration Management
+
+      ```python
+      import os
+      import json
+      import yaml  # pip install pyyaml
+
+      # Environment variables
+      gpu_count = int(os.environ.get("NUM_GPUS", "1"))
+      cluster_name = os.environ.get("CLUSTER_NAME", "default")
+
+      # YAML config loading
+      with open("cluster_config.yaml") as f:
+          config = yaml.safe_load(f)
+
+      nodes = config["cluster"]["nodes"]
+      for node in nodes:
+          print(f"{node['hostname']}: {node['gpus']} GPUs")
+      ```
+
+    exercises:
+      - id: "foundations-python-q1"
+        title: "subprocess Quiz"
+        description: "What argument to subprocess.run captures both stdout and stderr?"
+        exercise_type: "quiz"
+        difficulty: 1
+        options:
+          - "output=True"
+          - "capture_output=True"
+          - "pipe=True"
+          - "verbose=True"
+        correct_answer: "capture_output=True"
+        hints:
+          - "This is a convenience argument equivalent to stdout=PIPE, stderr=PIPE"
+        solution: "capture_output=True"
+
+      - id: "foundations-python-code1"
+        title: "GPU Inventory Script"
+        description: "Write a Python script that uses subprocess to call nvidia-smi, parses the output to extract GPU names and memory, and prints a formatted table."
+        exercise_type: "coding"
+        difficulty: 3
+        hints:
+          - "Use subprocess.run with capture_output=True"
+          - "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader gives clean output"
+          - "Split each line by comma to get name and memory"
+        solution: |
+          import subprocess
+          result = subprocess.run(
+              ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+              capture_output=True, text=True
+          )
+          for i, line in enumerate(result.stdout.strip().split("\n")):
+              name, mem = line.split(",")
+              print(f"GPU {i}: {name.strip()} ({mem.strip()})")
+
+      - id: "foundations-python-code2"
+        title: "Config File Generator"
+        description: "Write a Python function that takes a cluster name, node count, and GPUs per node, and generates a YAML config file."
+        exercise_type: "coding"
+        difficulty: 2
+        hints:
+          - "Use yaml.dump() to write YAML"
+          - "Build a dictionary structure first, then serialize"
+        solution: |
+          import yaml
+          def generate_config(cluster_name, node_count, gpus_per_node, output_path):
+              config = {
+                  "cluster": {
+                      "name": cluster_name,
+                      "nodes": [
+                          {"hostname": f"node-{i:03d}", "gpus": gpus_per_node}
+                          for i in range(node_count)
+                      ]
+                  }
+              }
+              with open(output_path, "w") as f:
+                  yaml.dump(config, f, default_flow_style=False)
+
+  - id: "networking-fundamentals"
+    title: "Networking Fundamentals"
+    order: 3
+    objectives:
+      - "Understand TCP/IP, DNS, and how data travels across networks"
+      - "Use SSH for secure remote access and tunneling"
+      - "Debug network issues with standard tools"
+    content_md: |
+      # Networking Fundamentals
+
+      AI platform engineers must understand networking because distributed training, data pipelines, and cluster management all depend on reliable, fast networks.
+
+      ## The TCP/IP Model
+
+      ```
+      ┌──────────────────────┐
+      │   Application Layer  │  HTTP, SSH, DNS, NCCL
+      ├──────────────────────┤
+      │   Transport Layer    │  TCP (reliable), UDP (fast)
+      ├──────────────────────┤
+      │   Network Layer      │  IP addressing, routing
+      ├──────────────────────┤
+      │   Link Layer         │  Ethernet, InfiniBand, WiFi
+      └──────────────────────┘
+      ```
+
+      ## SSH — Your Remote Access Lifeline
+
+      ```bash
+      # Basic connection
+      ssh user@cluster.example.com
+
+      # With key-based auth (recommended)
+      ssh -i ~/.ssh/id_ed25519 user@cluster
+
+      # SSH config file (~/.ssh/config) — saves typing
+      Host hpc
+          HostName cluster.example.com
+          User myuser
+          IdentityFile ~/.ssh/id_ed25519
+          ForwardAgent yes
+
+      # Now just: ssh hpc
+
+      # Port forwarding (access remote Jupyter on local port)
+      ssh -L 8888:localhost:8888 hpc
+
+      # SSH tunnel for TensorBoard
+      ssh -L 6006:localhost:6006 hpc
+      ```
+
+      ## Network Debugging Tools
+
+      ```bash
+      ping host              # Test connectivity
+      traceroute host        # Trace the route packets take
+      curl -v http://host    # Test HTTP endpoints
+      netstat -tlnp          # Show listening ports
+      ss -tlnp               # Modern alternative to netstat
+      nslookup hostname      # DNS lookup
+      dig hostname           # Detailed DNS query
+      ip addr show           # Show network interfaces
+      iperf3 -s / -c host   # Network bandwidth test
+      ```
+
+      ## InfiniBand — HPC's Secret Weapon
+
+      Standard Ethernet tops out at 25-100 Gbps. InfiniBand provides:
+      - **200-400 Gbps** bandwidth
+      - **Sub-microsecond** latency
+      - **RDMA** (Remote Direct Memory Access) — bypass the kernel for GPU-to-GPU transfers
+
+      ```bash
+      # Check InfiniBand status
+      ibstat
+      ibstatus
+
+      # Bandwidth test
+      ib_write_bw -d mlx5_0 --report_gbits
+      ```
+
+    exercises:
+      - id: "foundations-net-q1"
+        title: "SSH Tunneling Quiz"
+        description: "Which SSH flag creates a local port forward to access a remote service?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "-R"
+          - "-L"
+          - "-D"
+          - "-X"
+        correct_answer: "-L"
+        hints:
+          - "-L means Local port forwarding: -L local_port:remote_host:remote_port"
+        solution: "-L"
+
+      - id: "foundations-net-q2"
+        title: "InfiniBand vs Ethernet"
+        description: "What is the primary advantage of InfiniBand over Ethernet for HPC?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "Lower cost per port"
+          - "Higher bandwidth and lower latency with RDMA"
+          - "Better WiFi compatibility"
+          - "Easier cable management"
+        correct_answer: "Higher bandwidth and lower latency with RDMA"
+        hints:
+          - "Think about what matters most for transferring gradients between GPUs"
+        solution: "Higher bandwidth and lower latency with RDMA"
+
+  - id: "git-version-control"
+    title: "Version Control with Git"
+    order: 4
+    objectives:
+      - "Use Git for daily development workflows"
+      - "Understand branching, merging, and rebasing"
+      - "Collaborate effectively with remote repositories"
+    content_md: |
+      # Version Control with Git
+
+      Every piece of infrastructure code, training script, and configuration should be version-controlled.
+
+      ## Core Workflow
+
+      ```bash
+      git init                        # Initialize a new repo
+      git clone url                   # Clone existing repo
+      git status                      # Check what's changed
+      git add .                       # Stage all changes
+      git commit -m "description"     # Commit with message
+      git push origin main            # Push to remote
+      git pull origin main            # Pull latest changes
+      ```
+
+      ## Branching Strategies
+
+      ```bash
+      git checkout -b feature/gpu-monitoring   # Create and switch to branch
+      git branch -a                            # List all branches
+      git merge feature/gpu-monitoring         # Merge branch into current
+      git rebase main                          # Rebase current branch onto main
+      ```
+
+      For AI platform work, a common workflow:
+      1. `main` branch — production infrastructure code
+      2. `develop` branch — integration testing
+      3. Feature branches — individual changes
+      4. Tags — versioned releases of infrastructure
+
+      ## Git for ML Projects
+
+      ```bash
+      # .gitignore for ML projects
+      *.pt             # Model checkpoints
+      *.onnx           # Exported models
+      data/            # Large datasets (use DVC or Git LFS)
+      wandb/           # Experiment tracking logs
+      __pycache__/     # Python cache
+      .env             # Environment variables with secrets
+      ```
+
+    exercises:
+      - id: "foundations-git-q1"
+        title: "Git Branching Quiz"
+        description: "What is the difference between git merge and git rebase?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "They are identical operations"
+          - "Merge creates a merge commit; rebase replays commits linearly"
+          - "Rebase is only for remote branches"
+          - "Merge is faster than rebase"
+        correct_answer: "Merge creates a merge commit; rebase replays commits linearly"
+        hints:
+          - "Think about how each operation affects the commit history graph"
+        solution: "Merge creates a merge commit; rebase replays commits linearly"
+
+  - id: "shell-scripting"
+    title: "Shell Scripting & Automation"
+    order: 5
+    objectives:
+      - "Write robust bash scripts for infrastructure automation"
+      - "Use cron and systemd for scheduled tasks"
+      - "Build deployment and monitoring scripts"
+    content_md: |
+      # Shell Scripting & Automation
+
+      Shell scripts automate repetitive tasks: deploying models, monitoring GPUs, rotating logs, health checks.
+
+      ## Bash Script Structure
+
+      ```bash
+      #!/bin/bash
+      set -euo pipefail   # Exit on error, undefined vars, pipe failures
+
+      # Variables
+      CLUSTER_NAME="${CLUSTER_NAME:-default}"
+      LOG_DIR="/var/log/${CLUSTER_NAME}"
+      GPU_THRESHOLD=90
+
+      # Functions
+      check_gpu_health() {
+          local node=$1
+          local util=$(ssh "$node" nvidia-smi --query-gpu=utilization.gpu \
+                       --format=csv,noheader,nounits | head -1)
+          if [[ "$util" -gt "$GPU_THRESHOLD" ]]; then
+              echo "[WARN] $node GPU utilization at ${util}%"
+          fi
+      }
+
+      # Main logic
+      echo "Checking GPU health on cluster: $CLUSTER_NAME"
+      for node in node-{001..008}; do
+          check_gpu_health "$node"
+      done
+      ```
+
+      ## Scheduling with Cron
+
+      ```bash
+      # Edit crontab
+      crontab -e
+
+      # Run GPU health check every 5 minutes
+      */5 * * * * /opt/scripts/gpu_health.sh >> /var/log/gpu_health.log 2>&1
+
+      # Daily model checkpoint backup at 2 AM
+      0 2 * * * /opt/scripts/backup_checkpoints.sh
+
+      # Weekly cluster report on Monday at 9 AM
+      0 9 * * 1 /opt/scripts/weekly_report.sh | mail -s "Cluster Report" admin@company.com
+      ```
+
+      ## Systemd Service Files
+
+      For long-running services (metrics exporters, model servers):
+
+      ```ini
+      [Unit]
+      Description=GPU Metrics Exporter
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=monitor
+      ExecStart=/opt/monitoring/gpu_exporter --port 9400
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+      ```
+
+      ```bash
+      sudo systemctl enable gpu-exporter
+      sudo systemctl start gpu-exporter
+      sudo systemctl status gpu-exporter
+      ```
+
+    exercises:
+      - id: "foundations-shell-q1"
+        title: "set -euo pipefail"
+        description: "What does 'set -euo pipefail' do at the top of a bash script?"
+        exercise_type: "quiz"
+        difficulty: 2
+        options:
+          - "Enables verbose output"
+          - "Exits on error, undefined variables, and pipe failures"
+          - "Sets the script to run as root"
+          - "Enables debug mode"
+        correct_answer: "Exits on error, undefined variables, and pipe failures"
+        hints:
+          - "-e = exit on error, -u = treat undefined variables as errors, -o pipefail = pipe exit code"
+        solution: "Exits on error, undefined variables, and pipe failures"
+
+      - id: "foundations-shell-code1"
+        title: "Health Check Script"
+        description: "Write a bash script that checks if a list of nodes are reachable via SSH and reports their GPU count."
+        exercise_type: "coding"
+        difficulty: 3
+        hints:
+          - "Use a for loop over node names"
+          - "ssh node nvidia-smi -L to list GPUs"
+          - "Use $? to check if the SSH command succeeded"
+        solution: |
+          #!/bin/bash
+          set -uo pipefail
+          NODES=("node-001" "node-002" "node-003" "node-004")
+          for node in "${NODES[@]}"; do
+              if ssh -o ConnectTimeout=5 "$node" nvidia-smi -L 2>/dev/null; then
+                  gpu_count=$(ssh "$node" nvidia-smi -L | wc -l)
+                  echo "$node: OK ($gpu_count GPUs)"
+              else
+                  echo "$node: UNREACHABLE"
+              fi
+          done
