@@ -93,7 +93,10 @@ def _progress_dict(p: ProgressModel) -> dict[str, Any]:
 # ── Public API (same signatures as the old in-memory store) ─────────────
 
 def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception:
+        pass  # Another worker already created the tables
 
 
 def create_user(username: str, email: str, password: str) -> dict[str, Any]:
