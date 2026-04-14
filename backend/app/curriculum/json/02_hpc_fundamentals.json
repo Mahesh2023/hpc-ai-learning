@@ -1,0 +1,228 @@
+{
+  "id": "hpc-fundamentals",
+  "title": "HPC Architecture & Operations",
+  "description": "Understand HPC cluster architecture, job scheduling with SLURM, parallel computing with MPI, storage systems, and benchmarking.",
+  "level": "beginner",
+  "order": 2,
+  "estimated_hours": 15,
+  "prerequisites": [
+    "foundations"
+  ],
+  "skills": [
+    "HPC",
+    "Linux"
+  ],
+  "lessons": [
+    {
+      "id": "cluster-architecture",
+      "title": "HPC Cluster Architecture",
+      "order": 1,
+      "objectives": [
+        "Identify the components of a modern HPC cluster",
+        "Understand head nodes, compute nodes, and interconnects",
+        "Describe GPU node architecture and NVLink topology"
+      ],
+      "content_md": "# HPC Cluster Architecture\n\n## Anatomy of an HPC Cluster\n\nA modern AI/HPC cluster is a carefully engineered system. Here is the big picture:\n\n```\n┌─────────────────────────────────────────────────────────┐\n│                    USERS (SSH)                          │\n└───────────────────────┬─────────────────────────────────┘\n                        │\n┌───────────────────────▼─────────────────────────────────┐\n│                  LOGIN / HEAD NODES                     │\n│  (job submission, compilation, file management)         │\n└───────────────────────┬─────────────────────────────────┘\n                        │  Management Network (Ethernet)\n┌───────────────────────▼─────────────────────────────────┐\n│              RESOURCE MANAGER (SLURM)                   │\n│  slurmctld (controller) + slurmd (on each node)        │\n└──────┬──────────┬──────────┬──────────┬─────────────────┘\n       │          │          │          │  High-Speed Fabric\n┌──────▼───┐┌─────▼────┐┌───▼──────┐┌──▼───────┐\n│ Compute  ││ Compute  ││ Compute  ││ Compute  │\n│ Node 001 ││ Node 002 ││ Node 003 ││ Node ... │\n│ 8x A100  ││ 8x A100  ││ 8x A100  ││ 8x A100 │\n└──────┬───┘└─────┬────┘└───┬──────┘└──┬───────┘\n       │          │          │          │  Storage Network\n┌──────▼──────────▼──────────▼──────────▼───────────────┐\n│            PARALLEL STORAGE (Lustre / GPFS)           │\n│        High-bandwidth shared filesystem               │\n└──────────────────────────────────────────────────────┘\n```\n\n## GPU Node Architecture\n\nA DGX-style GPU node (the workhorse of AI training):\n\n| Component | Specification |\n|-----------|--------------|\n| GPUs | 8x NVIDIA A100/H100 (80GB each) |\n| GPU Interconnect | NVLink 3.0/4.0 (600-900 GB/s per GPU) |\n| CPUs | 2x AMD EPYC or Intel Xeon (64-128 cores) |\n| RAM | 1-2 TB DDR5 |\n| Local Storage | 4-8x NVMe SSDs (30 TB total) |\n| Network | 8x InfiniBand HDR/NDR (200-400 Gb/s each) |\n\n## Network Topology\n\nThe interconnect fabric is critical. Common topologies:\n\n- **Fat-tree**: Equal bandwidth at every level. Most common in HPC.\n- **Dragonfly**: Groups of switches connected with global links. Used in Cray systems.\n- **Rail-optimized**: Each GPU connects to its own InfiniBand HCA for maximum bandwidth.\n\nFor 8-GPU nodes with rail-optimized topology:\n```\nGPU0 ──── IB HCA 0 ────┐\nGPU1 ──── IB HCA 1 ────┤\nGPU2 ──── IB HCA 2 ────┤──── Leaf Switches ──── Spine Switches\n...                     │\nGPU7 ──── IB HCA 7 ────┘\n```\n",
+      "exercises": [
+        {
+          "id": "hpc-arch-q1",
+          "title": "Cluster Components",
+          "description": "What is the primary role of login/head nodes in an HPC cluster?",
+          "exercise_type": "quiz",
+          "difficulty": 1,
+          "options": [
+            "Running training jobs",
+            "Job submission, compilation, and file management",
+            "Storing datasets",
+            "Managing the network switches"
+          ],
+          "correct_answer": "Job submission, compilation, and file management",
+          "hints": [
+            "Users interact with the cluster through these nodes, but computation happens elsewhere"
+          ],
+          "solution": "Job submission, compilation, and file management"
+        },
+        {
+          "id": "hpc-arch-q2",
+          "title": "GPU Interconnect",
+          "description": "What technology provides direct GPU-to-GPU communication within a single node?",
+          "exercise_type": "quiz",
+          "difficulty": 2,
+          "options": [
+            "Ethernet",
+            "InfiniBand",
+            "NVLink",
+            "PCIe"
+          ],
+          "correct_answer": "NVLink",
+          "hints": [
+            "This is NVIDIA's proprietary high-bandwidth GPU interconnect"
+          ],
+          "solution": "NVLink"
+        },
+        {
+          "id": "hpc-arch-code1",
+          "title": "Cluster Inventory Report",
+          "description": "Write a bash script that SSHs into each node in a list and reports the hostname, number of GPUs, total GPU memory, and CPU count.",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "hints": [
+            "Use nvidia-smi for GPU info and nproc for CPU count",
+            "Parse nvidia-smi --query-gpu=memory.total --format=csv for memory"
+          ],
+          "solution": "#!/bin/bash\nfor node in node-{001..004}; do\n  echo \"=== $node ===\"\n  ssh $node \"hostname; nvidia-smi -L | wc -l; nvidia-smi --query-gpu=memory.total --format=csv,noheader; nproc\"\ndone\n"
+        }
+      ]
+    },
+    {
+      "id": "slurm-deep-dive",
+      "title": "Job Schedulers — SLURM Deep Dive",
+      "order": 2,
+      "objectives": [
+        "Write SLURM job scripts for GPU workloads",
+        "Use sbatch, srun, squeue, and scancel effectively",
+        "Configure partitions, job arrays, and dependencies"
+      ],
+      "content_md": "# Job Schedulers — SLURM Deep Dive\n\nSLURM (Simple Linux Utility for Resource Management) is the dominant job scheduler in HPC. It manages all compute resources and ensures fair allocation.\n\n## Essential SLURM Commands\n\n| Command | Purpose | Example |\n|---------|---------|---------|\n| `sbatch` | Submit batch job | `sbatch train.sh` |\n| `srun` | Run interactive/parallel task | `srun --gpus=1 python test.py` |\n| `squeue` | View job queue | `squeue -u $USER` |\n| `scancel` | Cancel job | `scancel 12345` |\n| `sinfo` | Cluster status | `sinfo -N -l` |\n| `sacct` | Job accounting | `sacct -j 12345 --format=JobID,Elapsed,MaxRSS` |\n| `scontrol` | Job/node control | `scontrol show job 12345` |\n\n## Writing a SLURM Job Script\n\n```bash\n#!/bin/bash\n#SBATCH --job-name=llm-training\n#SBATCH --partition=gpu-a100\n#SBATCH --nodes=4\n#SBATCH --ntasks-per-node=8\n#SBATCH --gpus-per-node=8\n#SBATCH --cpus-per-task=12\n#SBATCH --mem=0                    # Use all available memory\n#SBATCH --time=72:00:00            # 3-day time limit\n#SBATCH --output=logs/%x_%j.out    # %x=job name, %j=job ID\n#SBATCH --error=logs/%x_%j.err\n#SBATCH --exclusive                # No sharing the node\n\n# Load modules\nmodule load cuda/12.2 nccl/2.19 python/3.11\n\n# Set distributed training environment\nexport MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n1)\nexport MASTER_PORT=29500\nexport WORLD_SIZE=$((SLURM_NNODES * SLURM_NTASKS_PER_NODE))\n\n# Launch distributed training\nsrun torchrun \\\n    --nnodes=$SLURM_NNODES \\\n    --nproc_per_node=$SLURM_NTASKS_PER_NODE \\\n    --rdzv_id=$SLURM_JOB_ID \\\n    --rdzv_backend=c10d \\\n    --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \\\n    train.py --config configs/llama_7b.yaml\n```\n\n## Job Arrays\n\nRun many similar jobs with different parameters:\n\n```bash\n#SBATCH --array=0-9      # Creates 10 jobs (indices 0-9)\n\nCONFIGS=(lr_0.001 lr_0.01 lr_0.1 bs_32 bs_64 bs_128 wd_0.01 wd_0.1 opt_adam opt_sgd)\nCONFIG=${CONFIGS[$SLURM_ARRAY_TASK_ID]}\npython train.py --config \"$CONFIG\"\n```\n\n## Job Dependencies\n\nChain jobs together:\n\n```bash\n# Training job\nJOB1=$(sbatch --parsable train.sh)\n\n# Evaluation — runs after training completes\nJOB2=$(sbatch --parsable --dependency=afterok:$JOB1 eval.sh)\n\n# Report — runs after evaluation\nsbatch --dependency=afterok:$JOB2 report.sh\n```\n",
+      "exercises": [
+        {
+          "id": "hpc-slurm-q1",
+          "title": "SLURM Resources",
+          "description": "In a SLURM script, what does --gpus-per-node=8 mean?",
+          "exercise_type": "quiz",
+          "difficulty": 1,
+          "options": [
+            "Use 8 GPUs total across all nodes",
+            "Request 8 GPUs on each allocated node",
+            "Limit to 8 GPU hours",
+            "Use GPU type model 8"
+          ],
+          "correct_answer": "Request 8 GPUs on each allocated node",
+          "hints": [
+            "The 'per-node' suffix means the resource is requested for each node"
+          ],
+          "solution": "Request 8 GPUs on each allocated node"
+        },
+        {
+          "id": "hpc-slurm-code1",
+          "title": "Hyperparameter Sweep Script",
+          "description": "Write a SLURM job array script that runs a hyperparameter sweep over 5 learning rates (0.0001, 0.0005, 0.001, 0.005, 0.01) each on 1 GPU.",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "hints": [
+            "Use #SBATCH --array=0-4 for 5 jobs",
+            "Define an array of learning rates in bash",
+            "Use $SLURM_ARRAY_TASK_ID to index into the array"
+          ],
+          "solution": "#!/bin/bash\n#SBATCH --job-name=hp-sweep\n#SBATCH --array=0-4\n#SBATCH --gpus=1\n#SBATCH --time=4:00:00\nLR_VALUES=(0.0001 0.0005 0.001 0.005 0.01)\nLR=${LR_VALUES[$SLURM_ARRAY_TASK_ID]}\npython train.py --lr $LR --output results/lr_${LR}\n"
+        }
+      ]
+    },
+    {
+      "id": "mpi-parallel",
+      "title": "Parallel Computing with MPI",
+      "order": 3,
+      "objectives": [
+        "Understand message passing and MPI communication patterns",
+        "Write basic MPI programs with mpi4py",
+        "Distinguish point-to-point from collective operations"
+      ],
+      "content_md": "# Parallel Computing with MPI\n\nMPI (Message Passing Interface) is the standard for distributed computing in HPC. While deep learning frameworks abstract away most MPI details, understanding MPI concepts helps you debug distributed training issues.\n\n## Core Concepts\n\n- **Communicator**: A group of processes that can communicate (MPI_COMM_WORLD = all processes)\n- **Rank**: A process's unique ID within a communicator (0 to N-1)\n- **Size**: Total number of processes\n\n## mpi4py Example\n\n```python\nfrom mpi4py import MPI\n\ncomm = MPI.COMM_WORLD\nrank = comm.Get_rank()\nsize = comm.Get_size()\n\nprint(f\"Hello from rank {rank} of {size}\")\n\n# Point-to-point communication\nif rank == 0:\n    data = {\"key\": \"value\", \"numbers\": [1, 2, 3]}\n    comm.send(data, dest=1, tag=42)\n    print(f\"Rank 0 sent data to rank 1\")\nelif rank == 1:\n    data = comm.recv(source=0, tag=42)\n    print(f\"Rank 1 received: {data}\")\n```\n\nRun with: `mpirun -np 4 python script.py`\n\n## Collective Operations\n\n| Operation | Description | AI Equivalent |\n|-----------|-------------|---------------|\n| Broadcast | One-to-all | Send model weights to all GPUs |\n| Scatter | Split data to all | Distribute data batches |\n| Gather | Collect from all | Collect predictions |\n| Reduce | Combine with operation | Sum gradients |\n| **AllReduce** | Reduce + broadcast | **Gradient synchronization** |\n| AllGather | Gather + broadcast to all | Collect embeddings |\n\n**AllReduce is the most important operation in distributed deep learning.** It sums gradients across all GPUs and distributes the result back.\n\n```python\nimport numpy as np\nfrom mpi4py import MPI\n\ncomm = MPI.COMM_WORLD\nrank = comm.Get_rank()\n\n# Each process has local gradients\nlocal_gradient = np.random.randn(1000).astype(np.float32)\n\n# AllReduce: sum all gradients and distribute result\nglobal_gradient = np.zeros_like(local_gradient)\ncomm.Allreduce(local_gradient, global_gradient, op=MPI.SUM)\n\n# Now every process has the sum of all gradients\nglobal_gradient /= comm.Get_size()  # Average\n```\n",
+      "exercises": [
+        {
+          "id": "hpc-mpi-q1",
+          "title": "AllReduce Purpose",
+          "description": "Why is AllReduce the most critical MPI operation for distributed deep learning?",
+          "exercise_type": "quiz",
+          "difficulty": 2,
+          "options": [
+            "It distributes the training dataset",
+            "It synchronizes gradients across all GPUs and returns the result to all",
+            "It saves model checkpoints",
+            "It manages GPU memory allocation"
+          ],
+          "correct_answer": "It synchronizes gradients across all GPUs and returns the result to all",
+          "hints": [
+            "After each training step, all GPUs need the combined gradients to update the model identically"
+          ],
+          "solution": "It synchronizes gradients across all GPUs and returns the result to all"
+        }
+      ]
+    },
+    {
+      "id": "hpc-storage",
+      "title": "HPC Storage Systems",
+      "order": 4,
+      "objectives": [
+        "Understand parallel filesystems (Lustre, GPFS)",
+        "Optimize I/O patterns for training workloads",
+        "Use striping and caching effectively"
+      ],
+      "content_md": "# HPC Storage Systems\n\nStorage is often the biggest bottleneck in AI training. Understanding parallel filesystems helps you avoid I/O-bound training.\n\n## Lustre Filesystem\n\nLustre is the most common HPC filesystem, used on most Top500 supercomputers.\n\n```\n┌─────────────┐\n│ MDS (Metadata│  Handles file names, permissions, directory structure\n│   Server)    │\n└──────┬──────┘\n       │\n┌──────▼──────┐  ┌────────────┐  ┌────────────┐\n│ OSS/OST #1  │  │ OSS/OST #2 │  │ OSS/OST #N │  Object Storage Servers\n│ (stores data│  │            │  │            │  Each manages disk targets\n│  chunks)    │  │            │  │            │\n└─────────────┘  └────────────┘  └────────────┘\n```\n\n**Key concept: Striping** — A single file is split across multiple OSTs for parallel I/O.\n\n```bash\n# Set stripe count (spread file across 4 OSTs)\nlfs setstripe -c 4 -S 4M /lustre/training_data/\n\n# Check current striping\nlfs getstripe /lustre/training_data/dataset.tar\n\n# View filesystem usage\nlfs df -h\n```\n\n## I/O Best Practices for AI Training\n\n1. **Use large files, not millions of small ones** — Metadata operations are expensive\n2. **Pre-process data into efficient formats**: WebDataset, TFRecord, HDF5\n3. **Use local NVMe for hot data**: Copy datasets to node-local SSDs before training\n4. **Stripe large files**: More stripes = more parallel bandwidth\n5. **Avoid random small reads**: Sequential I/O is 10-100x faster\n\n```bash\n# Stage data to local NVMe before training\n#SBATCH --tmp=500G    # Request local storage\n\ncp /lustre/datasets/imagenet.tar $TMPDIR/\ntar -xf $TMPDIR/imagenet.tar -C $TMPDIR/data/\npython train.py --data-dir $TMPDIR/data/\n```\n",
+      "exercises": [
+        {
+          "id": "hpc-storage-q1",
+          "title": "Lustre Striping",
+          "description": "What does increasing the stripe count of a file in Lustre achieve?",
+          "exercise_type": "quiz",
+          "difficulty": 2,
+          "options": [
+            "Reduces the file size",
+            "Spreads data across more servers for parallel I/O",
+            "Encrypts the file",
+            "Compresses the file"
+          ],
+          "correct_answer": "Spreads data across more servers for parallel I/O",
+          "hints": [
+            "Striping divides a file into chunks stored on different servers"
+          ],
+          "solution": "Spreads data across more servers for parallel I/O"
+        }
+      ]
+    },
+    {
+      "id": "benchmarking",
+      "title": "Benchmarking & Performance",
+      "order": 5,
+      "objectives": [
+        "Run standard HPC benchmarks (HPL, HPCG, Stream)",
+        "Profile GPU workloads with nsys and ncu",
+        "Identify and resolve performance bottlenecks"
+      ],
+      "content_md": "# Benchmarking & Performance\n\nBenchmarking validates your cluster is performing as expected and helps identify bottlenecks.\n\n## Standard Benchmarks\n\n| Benchmark | Measures | Tool |\n|-----------|----------|------|\n| HPL | Peak FLOPS (dense linear algebra) | `xhpl` |\n| HPCG | Memory-bound performance | `xhpcg` |\n| STREAM | Memory bandwidth | `stream_c` |\n| NCCL Tests | GPU-to-GPU communication | `nccl-tests` |\n| MLPerf | Real ML training/inference | `mlperf` |\n\n## NCCL Tests — Critical for AI\n\n```bash\n# AllReduce bandwidth test (most important for distributed training)\nmpirun -np 8 --bind-to numa \\\n    ./build/all_reduce_perf \\\n    -b 1M -e 4G -f 2 -g 1\n\n# Expected output for 8x A100 with NVLink:\n# size    time    algbw    busbw\n# 4GB     2.1ms   242GB/s  423GB/s\n```\n\n## GPU Profiling with NVIDIA Nsight\n\n```bash\n# Profile a training step\nnsys profile --trace=cuda,nvtx,osrt \\\n    --output=training_profile \\\n    python train.py --steps=10\n\n# View the profile\nnsys-ui training_profile.nsys-rep\n\n# Detailed kernel analysis\nncu --set full \\\n    --target-processes all \\\n    python train.py --steps=1\n```\n\n## Common Bottlenecks\n\n1. **GPU Utilization < 80%**: Data loading too slow — increase DataLoader workers, use local NVMe\n2. **High AllReduce time**: Network bottleneck — check InfiniBand health, NCCL settings\n3. **Memory OOM**: Reduce batch size, enable gradient checkpointing, use mixed precision\n4. **Slow checkpointing**: Write to local NVMe first, then async-copy to shared storage\n",
+      "exercises": [
+        {
+          "id": "hpc-bench-q1",
+          "title": "Bottleneck Identification",
+          "description": "If GPU utilization is at 40% during training, what is the most likely bottleneck?",
+          "exercise_type": "quiz",
+          "difficulty": 2,
+          "options": [
+            "The model is too small",
+            "Data loading is too slow",
+            "The learning rate is too high",
+            "The GPUs are overheating"
+          ],
+          "correct_answer": "Data loading is too slow",
+          "hints": [
+            "Low GPU utilization means the GPUs are waiting for data"
+          ],
+          "solution": "Data loading is too slow"
+        },
+        {
+          "id": "hpc-bench-code1",
+          "title": "Benchmark Analysis Script",
+          "description": "Write a Python script that parses NCCL test output (lines with size, time, algbw, busbw) and generates a summary showing min/max/avg bus bandwidth.",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "hints": [
+            "NCCL test output has columns separated by whitespace",
+            "Bus bandwidth is typically the last column",
+            "Filter lines that start with a number (size in bytes)"
+          ],
+          "solution": "import sys\nbandwidths = []\nfor line in sys.stdin:\n    parts = line.strip().split()\n    if parts and parts[0].isdigit():\n        busbw = float(parts[-1])\n        bandwidths.append(busbw)\nif bandwidths:\n    print(f\"Min: {min(bandwidths):.1f} GB/s\")\n    print(f\"Max: {max(bandwidths):.1f} GB/s\")\n    print(f\"Avg: {sum(bandwidths)/len(bandwidths):.1f} GB/s\")\n"
+        }
+      ]
+    }
+  ]
+}

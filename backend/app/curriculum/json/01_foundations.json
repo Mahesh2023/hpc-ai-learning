@@ -1,0 +1,777 @@
+{
+  "id": "foundations",
+  "title": "Computing Foundations",
+  "description": "Build a solid foundation in Linux, Python, networking, Git, and shell scripting — the essential skills every AI platform engineer needs.",
+  "level": "beginner",
+  "order": 1,
+  "estimated_hours": 12,
+  "prerequisites": [],
+  "skills": [
+    "Linux",
+    "Python",
+    "Networking"
+  ],
+  "lessons": [
+    {
+      "id": "linux-cli",
+      "title": "Linux Command Line Mastery",
+      "order": 1,
+      "objectives": [
+        "Navigate the HPC filesystem hierarchy confidently",
+        "Manipulate files and directories with core commands",
+        "Use pipes, redirects, and process management",
+        "Understand file permissions and ownership in shared HPC environments",
+        "Manage environment variables and the module system"
+      ],
+      "content_md": "# Linux Command Line Mastery\n\nAlmost every HPC cluster and AI training platform runs Linux. Mastering the\ncommand line is not optional — it is the bedrock everything else builds on.\nWhether you are submitting training jobs, debugging a stalled pipeline, or\ntransferring terabytes of data, you will rely on your Linux skills every day.\n\n---\n\n## 1. The HPC Filesystem Hierarchy\n\nA typical HPC cluster exposes a filesystem layout that differs from a\ndesktop Linux box. Understanding where to put what saves you from quota\nheadaches and accidental data loss.\n\n```\n/\n├── home/\n│   └── <username>/          # Small quota (5-50 GB). Configs, scripts, code.\n│                            # Backed up nightly. NEVER store large data here.\n├── scratch/\n│   └── <username>/          # Large, FAST parallel filesystem (Lustre/GPFS).\n│                            # Use for job I/O. NOT backed up. Purged after 30-90 days.\n├── project/ or /groups/\n│   └── <project_id>/        # Shared team storage. Medium quota. Backed up.\n├── software/ or /opt/apps/\n│   └── <app>/<version>/     # Centrally installed software (CUDA, PyTorch, etc.)\n│                            # Accessed via the \"module\" system.\n└── tmp/\n    └── ...                  # Node-local temporary storage. Fast but small.\n                             # Wiped on reboot.\n```\n\n**Golden rule:** Run your jobs from `/scratch`, keep your code in `/home`,\nand share data with teammates in `/project`.\n\n---\n\n## 2. Essential Navigation Commands\n\n```bash\npwd                        # Print Working Directory — where am I right now?\nls                         # List files in the current directory\nls -lah                    # Long format, all files (including hidden), human sizes\nls -lt                     # Sort by modification time (newest first)\ncd /scratch/$USER          # Change directory to your scratch space\ncd ~                       # Shortcut to your home directory\ncd -                       # Jump back to the PREVIOUS directory (toggle)\ntree -L 2                  # Show directory tree, max depth 2\n```\n\n### Practical example — exploring an HPC node\n\n```bash\n$ ssh hpc-login01\n$ pwd\n/home/jdoe\n$ ls -la\ndrwxr-xr-x  5 jdoe users  4096 Jun  1 09:00 .\ndrwxr-xr-x 84 root  root  4096 May 28 12:00 ..\n-rw-------  1 jdoe users  1024 Jun  1 09:01 .bash_history\n-rw-r--r--  1 jdoe users   220 May 10 14:00 .bash_profile\ndrwx------  2 jdoe users  4096 May 15 10:00 .ssh\ndrwxr-xr-x  3 jdoe users  4096 Jun  1 08:00 projects\n$ cd /scratch/$USER\n$ pwd\n/scratch/jdoe\n```\n\n---\n\n## 3. File and Directory Operations\n\n```bash\n# Creating\nmkdir -p experiments/run_001/logs      # Create nested dirs in one shot\ntouch notes.txt                        # Create empty file / update timestamp\n\n# Copying\ncp config.yaml config.yaml.bak        # Copy a single file\ncp -r run_001/ run_002/               # Copy a directory recursively\n\n# Moving / Renaming\nmv results.csv final_results.csv      # Rename a file\nmv *.log logs/                        # Move all .log files into logs/\n\n# Removing  (CAUTION: no trash can!)\nrm old_output.txt                     # Remove a file\nrm -rf experiments/failed_run/        # Remove a directory tree — IRREVERSIBLE\n\n# Symbolic links — like shortcuts\nln -s /software/cuda/12.2 ~/cuda      # Now ~/cuda points to the real path\n```\n\n---\n\n## 4. Viewing and Searching File Contents\n\n```bash\ncat file.txt                          # Dump the whole file to the terminal\nless file.txt                         # Scrollable viewer (q to quit)\nhead -n 20 file.txt                   # First 20 lines\ntail -n 50 file.txt                   # Last 50 lines\ntail -f training.log                  # FOLLOW a log in real time (Ctrl-C to stop)\n\n# grep — search within files\ngrep \"ERROR\" slurm-12345.out          # Lines containing \"ERROR\"\ngrep -rn \"learning_rate\" configs/     # Recursive search with line numbers\ngrep -c \"OOM\" training.log            # Count matching lines\ngrep -i \"warning\" *.log              # Case-insensitive search\n\n# find — search for files\nfind /scratch/$USER -name \"*.pt\" -size +1G   # Checkpoints over 1 GB\nfind . -mtime -1 -name \"*.log\"               # Logs modified in last 24h\nfind . -type f -empty -delete                # Delete empty files\n```\n\n---\n\n## 5. Text Processing Power Tools: awk, sed, cut\n\nThese three commands turn you into a data wizard at the terminal.\n\n### awk — column-oriented processing\n\n```bash\n# Print the 1st and 3rd columns of a CSV\nawk -F',' '{print $1, $3}' results.csv\n\n# Sum a numeric column (column 5)\nawk '{sum += $5} END {print \"Total:\", sum}' metrics.txt\n\n# Filter lines where column 2 > 90\nawk '$2 > 90 {print $0}' gpu_util.log\n```\n\n### sed — stream editor for substitution\n\n```bash\n# Replace all occurrences of \"python3.9\" with \"python3.11\" in a file\nsed -i 's/python3\\.9/python3.11/g' setup.sh\n\n# Delete blank lines\nsed -i '/^$/d' config.txt\n\n# Print lines 10-20\nsed -n '10,20p' long_file.txt\n```\n\n### cut — extract fixed columns\n\n```bash\n# Get the first field from a colon-delimited file\ncut -d: -f1 /etc/passwd\n\n# Get columns 1 and 3 from a CSV\ncut -d',' -f1,3 data.csv\n```\n\n---\n\n## 6. Pipes, Redirection, and Command Chaining\n\nPipes (`|`) are Linux's killer feature — they let you compose simple\ncommands into powerful pipelines.\n\n```\n┌─────────┐   stdout   ┌─────────┐   stdout   ┌──────────┐\n│  cmd A   │ ────────> │  cmd B   │ ────────> │  cmd C    │\n└─────────┘   (pipe)   └─────────┘   (pipe)   └──────────┘\n```\n\n```bash\n# Count how many Python files are in your project\nfind . -name \"*.py\" | wc -l\n\n# Top 10 largest files under the current directory\ndu -ah . | sort -rh | head -10\n\n# Unique error messages sorted by frequency\ngrep \"ERROR\" app.log | sort | uniq -c | sort -rn | head -20\n\n# Extract GPU utilization values and compute the average\nnvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits \\\n  | awk '{sum+=$1; n++} END {print \"Avg GPU util:\", sum/n \"%\"}'\n```\n\n### Redirection\n\n```bash\ncommand > file.txt            # Redirect stdout, overwrite\ncommand >> file.txt           # Redirect stdout, append\ncommand 2> errors.txt         # Redirect stderr only\ncommand > out.txt 2>&1        # Redirect BOTH stdout and stderr\ncommand &> all.txt            # Shorthand for the above (bash)\ncommand < input.txt           # Feed a file into stdin\n```\n\n---\n\n## 7. File Permissions and Ownership\n\nOn a shared HPC cluster, permissions protect your data from other users\nand ensure your scripts can execute.\n\n```\n$ ls -l train.py\n-rwxr-x---  1 jdoe ai-team  8192 Jun  1 10:00 train.py\n ├─┤├─┤├─┤     │     │\n │   │   │      │     └── Group\n │   │   │      └──────── Owner\n │   │   └── Others: --- (no access)\n │   └────── Group:  r-x (read + execute)\n └────────── Owner:  rwx (read + write + execute)\n```\n\n### Numeric (octal) representation\n\n| Permission | Bit Value | Octal |\n|------------|-----------|-------|\n| Read (r)   | 4         |       |\n| Write (w)  | 2         |       |\n| Execute (x)| 1         |       |\n\nCommon patterns:\n\n```bash\nchmod 755 script.sh          # rwxr-xr-x  (owner full, others read+exec)\nchmod 700 private_key        # rwx------  (owner only)\nchmod 644 config.yaml        # rw-r--r--  (owner write, others read)\nchmod 660 shared_data.h5     # rw-rw----  (owner + group read/write)\nchmod +x run_training.sh     # Add execute to whoever can already access\nchown jdoe:ai-team data/     # Change owner and group\nchgrp ai-team data/          # Change group only\n```\n\n### Special bits: setgid for shared directories\n\n```bash\n# Make new files in /project/ai-team inherit the group\nchmod g+s /project/ai-team/\n```\n\n---\n\n## 8. Process Management\n\n```bash\nps aux                       # Snapshot of all processes\nps aux | grep python         # Find python processes\ntop                          # Real-time process viewer\nhtop                         # Better interactive viewer (if installed)\n\nkill PID                     # Send SIGTERM (graceful shutdown)\nkill -9 PID                  # Send SIGKILL (force — last resort)\nkill -STOP PID               # Pause a process\nkill -CONT PID               # Resume a paused process\n\n# Running jobs in the background\npython train.py &            # Start in background\nnohup python train.py &      # Survives logout (output to nohup.out)\njobs                         # List background jobs\nfg %1                        # Bring job 1 to foreground\nbg %1                        # Resume a stopped job in background\n```\n\n### screen and tmux — persistent sessions\n\n```bash\n# tmux: create a named session\ntmux new -s training\n# Run your command ... then detach:\n# Ctrl-b  d\n# Re-attach later (even from a different SSH session):\ntmux attach -t training\n```\n\n---\n\n## 9. Environment Variables and the Module System\n\n```bash\n# View environment variables\necho $HOME                   # /home/jdoe\necho $PATH                   # Colon-separated search path for executables\necho $SCRATCH                # Often /scratch/jdoe (cluster-specific)\nenv                          # Print ALL environment variables\n\n# Set variables\nexport MY_VAR=\"hello\"        # Available to child processes\nMY_VAR=\"hello\"               # Only available in current shell\n\n# The HPC Module System — managing software versions\nmodule avail                 # List all available modules\nmodule avail cuda            # Search for CUDA versions\nmodule load cuda/12.2        # Load CUDA 12.2 into your environment\nmodule load python/3.11      # Load Python 3.11\nmodule list                  # Show currently loaded modules\nmodule unload cuda/12.2      # Unload a module\nmodule purge                 # Unload everything — start fresh\n```\n\nAfter `module load cuda/12.2`, the module system adds the CUDA bin and\nlib directories to your `$PATH` and `$LD_LIBRARY_PATH` automatically.\n\n---\n\n## 10. Archiving and Compression\n\n```bash\n# tar — tape archive\ntar -czf archive.tar.gz directory/     # Create gzipped tarball\ntar -xzf archive.tar.gz               # Extract gzipped tarball\ntar -tf archive.tar.gz                # List contents without extracting\n\n# Transferring data between clusters\ntar -czf - my_data/ | ssh hpc02 'tar -xzf - -C /scratch/jdoe/'\n```\n\n---\n\n## Interactive Lab\n\nPractice navigating the filesystem, creating files, setting permissions,\nand building pipelines in this guided lab:\n\n:::interactive{component=\"GuidedLab\" config='{\"preset\":\"linux-files\"}'}\n\n---\n\n## Summary\n\n| Skill              | Key Commands                                |\n|--------------------|---------------------------------------------|\n| Navigation         | `pwd`, `ls`, `cd`, `tree`                   |\n| File operations    | `cp`, `mv`, `rm`, `mkdir`, `ln`             |\n| Viewing/searching  | `cat`, `less`, `grep`, `find`, `awk`, `sed` |\n| Pipes/redirection  | `|`, `>`, `>>`, `2>&1`                      |\n| Permissions        | `chmod`, `chown`, `chgrp`                   |\n| Processes          | `ps`, `top`, `kill`, `nohup`, `tmux`        |\n| Modules            | `module load`, `module avail`, `module list`|\n",
+      "exercises": [
+        {
+          "id": "foundations-linux-q1",
+          "title": "Pipe Command Quiz",
+          "description": "Which command chain finds the 5 largest files in the current directory tree and displays their sizes in a human-readable format?",
+          "exercise_type": "quiz",
+          "difficulty": 2,
+          "options": [
+            "ls -la | head -5",
+            "du -ah . | sort -rh | head -5",
+            "find . -size +100M",
+            "df -h | sort -rh | head -5"
+          ],
+          "correct_answer": "du -ah . | sort -rh | head -5",
+          "hints": [
+            "du reports disk usage for every file and directory",
+            "sort -rh sorts in reverse order with human-readable size comparison"
+          ],
+          "solution": "du -ah . | sort -rh | head -5"
+        },
+        {
+          "id": "foundations-linux-q2",
+          "title": "Permission Decode",
+          "description": "What octal permission value gives the owner full access, the group read+execute, and others no access?",
+          "exercise_type": "quiz",
+          "difficulty": 2,
+          "options": [
+            "755",
+            "750",
+            "700",
+            "644"
+          ],
+          "correct_answer": "750",
+          "hints": [
+            "Owner: rwx = 4+2+1 = 7",
+            "Group: r-x = 4+0+1 = 5",
+            "Others: --- = 0"
+          ],
+          "solution": "750 — Owner gets rwx (7), group gets r-x (5), others get nothing (0)."
+        },
+        {
+          "id": "foundations-linux-code1",
+          "title": "Large File Finder Script",
+          "description": "Write a Python script that mimics a common HPC admin task: find all files\nlarger than a given size threshold (in MB) under a directory tree.\nThe function should return a list of tuples (filepath, size_in_mb) sorted\nby size descending.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "import os\n\ndef find_large_files(directory: str, min_size_mb: float) -> list[tuple[str, float]]:\n    \"\"\"\n    Find all files >= min_size_mb under directory.\n    Return list of (filepath, size_in_mb) sorted by size descending.\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: Basic directory scan",
+              "input": "{\"directory\": \"/tmp/test_files\", \"min_size_mb\": 10}",
+              "expected_output": "[(\"/tmp/test_files/big.dat\", 50.0), (\"/tmp/test_files/medium.bin\", 15.5)]"
+            },
+            {
+              "label": "Test 2: No files match threshold",
+              "input": "{\"directory\": \"/tmp/small_files\", \"min_size_mb\": 100}",
+              "expected_output": "[]"
+            },
+            {
+              "label": "Test 3: Nested directory search",
+              "input": "{\"directory\": \"/tmp/nested\", \"min_size_mb\": 1}",
+              "expected_output": "[(\"/tmp/nested/sub/deep/data.h5\", 200.0), (\"/tmp/nested/output.csv\", 5.0)]",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "Use os.walk() to traverse the directory tree",
+            "os.path.getsize() returns size in bytes — divide by 1024*1024 for MB",
+            "Remember to sort with reverse=True"
+          ],
+          "solution": "import os\n\ndef find_large_files(directory: str, min_size_mb: float) -> list[tuple[str, float]]:\n    results = []\n    for root, dirs, files in os.walk(directory):\n        for fname in files:\n            fpath = os.path.join(root, fname)\n            try:\n                size_bytes = os.path.getsize(fpath)\n                size_mb = round(size_bytes / (1024 * 1024), 1)\n                if size_mb >= min_size_mb:\n                    results.append((fpath, size_mb))\n            except OSError:\n                continue\n    results.sort(key=lambda x: x[1], reverse=True)\n    return results\n"
+        },
+        {
+          "id": "foundations-linux-code2",
+          "title": "Log Analysis Script",
+          "description": "Write a Python function that parses an Nginx-style access log and returns\nthe top N IP addresses by request count.  Each line of the log has the\nformat:\n  IP_ADDRESS - - [timestamp] \"METHOD /path HTTP/1.1\" STATUS SIZE\nExample:\n  192.168.1.10 - - [01/Jun/2024:10:00:00 +0000] \"GET /index.html HTTP/1.1\" 200 1024\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "def top_ips(log_text: str, n: int = 5) -> list[tuple[str, int]]:\n    \"\"\"\n    Parse log_text (multi-line string) and return the top n IPs\n    as a list of (ip_address, count) sorted by count descending.\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: Simple log with three IPs",
+              "input": "192.168.1.1 - - [01/Jun/2024:10:00:00 +0000] \"GET / HTTP/1.1\" 200 512\n192.168.1.2 - - [01/Jun/2024:10:00:01 +0000] \"GET / HTTP/1.1\" 200 512\n192.168.1.1 - - [01/Jun/2024:10:00:02 +0000] \"GET /page HTTP/1.1\" 200 1024\n192.168.1.1 - - [01/Jun/2024:10:00:03 +0000] \"POST /api HTTP/1.1\" 201 256\n192.168.1.3 - - [01/Jun/2024:10:00:04 +0000] \"GET / HTTP/1.1\" 200 512\n",
+              "expected_output": "[(\"192.168.1.1\", 3), (\"192.168.1.2\", 1), (\"192.168.1.3\", 1)]"
+            },
+            {
+              "label": "Test 2: Empty log",
+              "input": "",
+              "expected_output": "[]"
+            },
+            {
+              "label": "Test 3: Top 1 only",
+              "input": "10.0.0.1 - - [01/Jun/2024:10:00:00 +0000] \"GET / HTTP/1.1\" 200 512\n10.0.0.2 - - [01/Jun/2024:10:00:01 +0000] \"GET / HTTP/1.1\" 200 512\n10.0.0.1 - - [01/Jun/2024:10:00:02 +0000] \"GET / HTTP/1.1\" 200 512\n",
+              "expected_output": "[(\"10.0.0.1\", 2)]",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "Split each line on whitespace; the IP is the first token",
+            "Use a dictionary or collections.Counter to count occurrences",
+            "Sort by count descending, then slice [:n]"
+          ],
+          "solution": "from collections import Counter\n\ndef top_ips(log_text: str, n: int = 5) -> list[tuple[str, int]]:\n    if not log_text.strip():\n        return []\n    ips = []\n    for line in log_text.strip().split(\"\\n\"):\n        parts = line.split()\n        if parts:\n            ips.append(parts[0])\n    counts = Counter(ips)\n    return counts.most_common(n)\n"
+        },
+        {
+          "id": "foundations-linux-lab1",
+          "title": "HPC Filesystem Exploration Lab",
+          "description": "**Guided Lab: Navigating an HPC Filesystem**\n\nIn this lab you will practice essential Linux commands in a simulated\nHPC environment.\n\n**Step 1 — Orient yourself**\n1. Run `pwd` to see your current directory.\n2. Run `ls -la` to list all files including hidden ones.\n3. Run `echo $HOME` and `echo $SCRATCH` to see your environment variables.\n\n**Step 2 — Create a project structure**\n1. `mkdir -p /scratch/$USER/experiment_001/{data,logs,checkpoints}`\n2. Verify with `tree /scratch/$USER/experiment_001`\n3. Create a placeholder: `touch /scratch/$USER/experiment_001/data/README.md`\n\n**Step 3 — Set permissions for team sharing**\n1. `chmod 770 /scratch/$USER/experiment_001/`\n2. `chmod -R g+rX /scratch/$USER/experiment_001/`\n3. Verify with `ls -la /scratch/$USER/experiment_001/`\n\n**Step 4 — Build a pipeline**\n1. Create a sample log: `for i in $(seq 1 100); do echo \"$(date) INFO Request $i processed\" >> /tmp/app.log; done`\n2. Add some errors: `echo \"$(date) ERROR Connection timeout\" >> /tmp/app.log`\n3. Use `grep`, `sort`, and `uniq -c` to count log levels.\n\n**Step 5 — Process management**\n1. Start a background process: `sleep 300 &`\n2. List it with `jobs` and `ps aux | grep sleep`\n3. Kill it with `kill %1`\n",
+          "exercise_type": "lab",
+          "difficulty": 2,
+          "hints": [
+            "Use tab completion to speed up typing paths",
+            "If you make a mistake, `rm -rf` and start over — it is scratch space"
+          ],
+          "solution": "# Step 1\npwd\nls -la\necho $HOME && echo $SCRATCH\n\n# Step 2\nmkdir -p /scratch/$USER/experiment_001/{data,logs,checkpoints}\ntree /scratch/$USER/experiment_001\ntouch /scratch/$USER/experiment_001/data/README.md\n\n# Step 3\nchmod 770 /scratch/$USER/experiment_001/\nchmod -R g+rX /scratch/$USER/experiment_001/\nls -la /scratch/$USER/experiment_001/\n\n# Step 4\nfor i in $(seq 1 100); do echo \"$(date) INFO Request $i processed\" >> /tmp/app.log; done\nfor i in $(seq 1 5); do echo \"$(date) ERROR Connection timeout\" >> /tmp/app.log; done\nawk '{print $4}' /tmp/app.log | sort | uniq -c | sort -rn\n\n# Step 5\nsleep 300 &\njobs\nps aux | grep sleep\nkill %1\n"
+        },
+        {
+          "id": "foundations-linux-q3",
+          "title": "Environment Module Quiz",
+          "description": "On an HPC cluster, which command loads CUDA 12.2 into your current shell environment, updating $PATH and $LD_LIBRARY_PATH?",
+          "exercise_type": "quiz",
+          "difficulty": 1,
+          "options": [
+            "apt install cuda-12.2",
+            "module load cuda/12.2",
+            "source /opt/cuda/12.2/activate",
+            "export CUDA_VERSION=12.2"
+          ],
+          "correct_answer": "module load cuda/12.2",
+          "hints": [
+            "HPC clusters use the 'module' system to manage software versions",
+            "The module system modifies environment variables so different software versions do not conflict"
+          ],
+          "solution": "module load cuda/12.2 — the module system dynamically adjusts PATH, LD_LIBRARY_PATH, and other variables."
+        }
+      ]
+    },
+    {
+      "id": "python-infra",
+      "title": "Python for Infrastructure",
+      "order": 2,
+      "objectives": [
+        "Manage Python environments on HPC systems with venv and conda",
+        "Use subprocess to run system commands from Python",
+        "Work with os, pathlib, and shutil for file operations",
+        "Apply multiprocessing for CPU-parallel tasks",
+        "Use NumPy basics for numerical computing",
+        "Write efficient file I/O for large HPC datasets"
+      ],
+      "content_md": "# Python for Infrastructure\n\nPython is the glue language of AI infrastructure. You will use it to\nautomate deployments, parse configurations, manage clusters, and build\ntooling. This lesson focuses on the Python skills that matter most for\nHPC and AI platform work — not web dev, not data science theory, but\nthe practical engineering of systems at scale.\n\n---\n\n## 1. Python Environment Management on HPC\n\nOn your laptop you might just `pip install`. On a shared HPC cluster,\nyou need to be more disciplined because:\n- Multiple users share the same system Python.\n- Different projects may need different library versions.\n- The module system provides base Python; you layer your own packages on top.\n\n### Using venv (built-in)\n\n```bash\n# Load the cluster Python\nmodule load python/3.11\n\n# Create a virtual environment in your scratch space (fast filesystem)\npython -m venv /scratch/$USER/envs/myproject\n\n# Activate it\nsource /scratch/$USER/envs/myproject/bin/activate\n\n# Install packages\npip install --upgrade pip\npip install numpy torch lightning wandb\n\n# Save reproducible requirements\npip freeze > requirements.txt\n\n# Deactivate when done\ndeactivate\n```\n\n### Using conda / mamba\n\n```bash\n# Many HPC centers provide Anaconda via modules\nmodule load anaconda3/2024.02\n\n# Create an environment\nconda create -n hpc-ml python=3.11 numpy scipy -y\n\n# Activate\nconda activate hpc-ml\n\n# Install PyTorch with CUDA support\nconda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia\n\n# Export for reproducibility\nconda env export > environment.yml\n```\n\n> **Pro tip:** Put your conda environments on `/scratch` or `/project`,\n> NOT in your home directory — they can grow to many gigabytes.\n\n---\n\n## 2. Running System Commands from Python\n\n```python\nimport subprocess\n\n# Simple command execution — the RIGHT way\nresult = subprocess.run(\n    [\"nvidia-smi\", \"--query-gpu=name,memory.total\", \"--format=csv\"],\n    capture_output=True,   # capture stdout and stderr\n    text=True,             # decode bytes to str\n    check=True,            # raise CalledProcessError on non-zero exit\n    timeout=30             # don't hang forever\n)\nprint(result.stdout)\nprint(f\"Return code: {result.returncode}\")\n\n# When you need shell features (pipes, glob expansion)\nresult = subprocess.run(\n    \"ps aux | grep python | wc -l\",\n    shell=True, capture_output=True, text=True\n)\nprint(f\"Python processes: {result.stdout.strip()}\")\n\n# Running a long command and streaming output line by line\nprocess = subprocess.Popen(\n    [\"tail\", \"-f\", \"/var/log/syslog\"],\n    stdout=subprocess.PIPE, text=True\n)\nfor line in process.stdout:\n    if \"GPU\" in line:\n        print(line, end=\"\")\n```\n\n### Common pitfall: shell=True security\n\n```python\n# DANGEROUS — user input could inject commands\nuser_input = \"myfile; rm -rf /\"\nsubprocess.run(f\"cat {user_input}\", shell=True)  # DON'T DO THIS\n\n# SAFE — use a list and no shell\nsubprocess.run([\"cat\", user_input])  # The filename is a single argument\n```\n\n---\n\n## 3. Filesystem Operations with pathlib\n\n`pathlib` is the modern, object-oriented way to handle paths in Python.\nAlways prefer it over `os.path`.\n\n```python\nfrom pathlib import Path\nimport shutil\n\n# Build paths with the / operator\nscratch = Path(\"/scratch\") / \"jdoe\"\nexperiment = scratch / \"experiment_042\"\n\n# Create directories\nexperiment.mkdir(parents=True, exist_ok=True)\n\n# Check existence and type\nprint(experiment.exists())       # True\nprint(experiment.is_dir())       # True\n\n# Iterate over files recursively\nfor py_file in scratch.rglob(\"*.py\"):\n    size_kb = py_file.stat().st_size / 1024\n    print(f\"{py_file.name}: {size_kb:.1f} KB\")\n\n# Read and write files\nconfig_file = experiment / \"config.yaml\"\nconfig_file.write_text(\"epochs: 100\\nlr: 0.001\\n\")\ncontent = config_file.read_text()\n\n# Copy a directory tree\nshutil.copytree(experiment, scratch / \"experiment_042_backup\")\n\n# Calculate total size of a directory\ntotal = sum(f.stat().st_size for f in experiment.rglob(\"*\") if f.is_file())\nprint(f\"Total size: {total / (1024**2):.1f} MB\")\n```\n\n---\n\n## 4. Multiprocessing for CPU Parallelism\n\nMany HPC pre/post-processing tasks are CPU-bound. Python's\n`multiprocessing` module lets you use all available cores.\n\n```python\nfrom multiprocessing import Pool, cpu_count\nimport time\n\ndef process_file(filepath: str) -> dict:\n    \"\"\"Simulate expensive processing of a data file.\"\"\"\n    # In real life: parse, transform, validate a dataset shard\n    time.sleep(0.5)  # Simulate work\n    line_count = sum(1 for _ in open(filepath))\n    return {\"file\": filepath, \"lines\": line_count}\n\nif __name__ == \"__main__\":\n    files = [f\"/data/shard_{i:04d}.csv\" for i in range(100)]\n\n    print(f\"Using {cpu_count()} CPU cores\")\n\n    # Process files in parallel\n    with Pool(processes=cpu_count()) as pool:\n        results = pool.map(process_file, files)\n\n    total_lines = sum(r[\"lines\"] for r in results)\n    print(f\"Processed {len(results)} files, {total_lines} total lines\")\n```\n\n### Threading vs Multiprocessing\n\n```\n┌────────────────────────────────────────────────────┐\n│                  When to use what?                  │\n├────────────────────────┬───────────────────────────┤\n│  multiprocessing       │  threading                │\n├────────────────────────┼───────────────────────────┤\n│  CPU-bound work        │  I/O-bound work           │\n│  Data crunching        │  HTTP requests            │\n│  Image preprocessing   │  File downloads           │\n│  Bypasses the GIL      │  Limited by the GIL       │\n└────────────────────────┴───────────────────────────┘\n```\n\n```python\nfrom concurrent.futures import ThreadPoolExecutor\nimport urllib.request\n\nurls = [\"http://data-server/shard_001.tar\", \"http://data-server/shard_002.tar\"]\n\ndef download(url):\n    filename = url.split(\"/\")[-1]\n    urllib.request.urlretrieve(url, f\"/scratch/data/{filename}\")\n    return filename\n\nwith ThreadPoolExecutor(max_workers=8) as executor:\n    results = list(executor.map(download, urls))\n```\n\n---\n\n## 5. NumPy Basics for Numerical Computing\n\nNumPy is the foundation of the entire scientific Python ecosystem.\nUnderstanding it is essential for working with model weights, datasets,\nand performance metrics.\n\n```python\nimport numpy as np\n\n# Creating arrays\na = np.array([1.0, 2.0, 3.0, 4.0])\nb = np.zeros((3, 4))              # 3x4 matrix of zeros\nc = np.random.randn(1000, 768)    # Simulating embedding vectors\n\n# Vectorized operations — NO loops needed\nscaled = a * 2.5 + 1.0            # Element-wise math\ndot = c @ c.T                     # Matrix multiplication\n\n# Statistical operations\nprint(f\"Mean: {c.mean():.4f}\")\nprint(f\"Std:  {c.std():.4f}\")\nprint(f\"Shape: {c.shape}\")         # (1000, 768)\n\n# Saving and loading (efficient binary format)\nnp.save(\"/scratch/embeddings.npy\", c)\nloaded = np.load(\"/scratch/embeddings.npy\")\n\n# Memory mapping for huge files — does NOT load into RAM\nmmap = np.load(\"/scratch/huge_matrix.npy\", mmap_mode=\"r\")\nsubset = mmap[0:100]  # Only these rows are read from disk\n```\n\n---\n\n## 6. File I/O Patterns for HPC\n\nHPC workloads often involve very large files. Choosing the right I/O\nstrategy can mean the difference between minutes and hours.\n\n```python\n# Reading large files line by line (constant memory)\ndef count_errors(log_path: str) -> int:\n    count = 0\n    with open(log_path) as f:\n        for line in f:           # Python iterates lazily — one line in memory\n            if \"ERROR\" in line:\n                count += 1\n    return count\n\n# Binary I/O for large datasets\nimport struct\n\ndef read_binary_vectors(path: str, dim: int) -> np.ndarray:\n    \"\"\"Read a flat binary file of float32 vectors.\"\"\"\n    data = np.fromfile(path, dtype=np.float32)\n    return data.reshape(-1, dim)\n\n# HDF5 for structured scientific data\nimport h5py\n\nwith h5py.File(\"/scratch/dataset.h5\", \"w\") as f:\n    f.create_dataset(\"images\", shape=(10000, 224, 224, 3), dtype=\"uint8\",\n                     chunks=(64, 224, 224, 3), compression=\"gzip\")\n    f[\"images\"][0:64] = np.random.randint(0, 255, (64, 224, 224, 3), dtype=\"uint8\")\n```\n\n---\n\n## Interactive Lab\n\nPractice Python infrastructure scripting in this guided lab\nenvironment:\n\n:::interactive{component=\"GuidedLab\" config='{\"preset\":\"python-hpc\"}'}\n\n---\n\n## Summary\n\n| Skill                    | Key Tools                                          |\n|--------------------------|----------------------------------------------------|\n| Environment management   | `venv`, `conda`, `module load`                     |\n| System commands          | `subprocess.run()`, `Popen`                        |\n| File operations          | `pathlib.Path`, `shutil`                           |\n| Parallelism              | `multiprocessing.Pool`, `ThreadPoolExecutor`        |\n| Numerical computing      | `numpy` arrays, vectorized ops, `np.save/load`     |\n| Large file I/O           | Line-by-line iteration, `np.fromfile`, `h5py`       |\n",
+      "exercises": [
+        {
+          "id": "foundations-python-q1",
+          "title": "subprocess Quiz",
+          "description": "What argument to subprocess.run captures both stdout and stderr into the result object?",
+          "exercise_type": "quiz",
+          "difficulty": 1,
+          "options": [
+            "output=True",
+            "capture_output=True",
+            "pipe=True",
+            "verbose=True"
+          ],
+          "correct_answer": "capture_output=True",
+          "hints": [
+            "This is a convenience argument equivalent to stdout=PIPE, stderr=PIPE"
+          ],
+          "solution": "capture_output=True — shorthand for stdout=subprocess.PIPE, stderr=subprocess.PIPE"
+        },
+        {
+          "id": "foundations-python-code1",
+          "title": "System Resource Detector",
+          "description": "Write a Python function that detects system resources and returns a\ndictionary with CPU count, total memory in GB, hostname, and Python\nversion.  Use only the standard library (os, platform, etc.).\n",
+          "exercise_type": "coding",
+          "difficulty": 2,
+          "starter_code": "import os\nimport platform\n\ndef detect_resources() -> dict:\n    \"\"\"\n    Return a dict with keys:\n      - \"cpu_count\": int (number of logical CPUs)\n      - \"hostname\": str\n      - \"python_version\": str (e.g. \"3.11.5\")\n      - \"os_name\": str (e.g. \"Linux\")\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: All keys present",
+              "input": "{}",
+              "expected_output": "{\"cpu_count\": 8, \"hostname\": \"hpc-login01\", \"python_version\": \"3.11.5\", \"os_name\": \"Linux\"}"
+            },
+            {
+              "label": "Test 2: cpu_count is a positive integer",
+              "input": "{}",
+              "expected_output": "cpu_count > 0"
+            },
+            {
+              "label": "Test 3: python_version matches X.Y.Z format",
+              "input": "{}",
+              "expected_output": "matches r'\\d+\\.\\d+\\.\\d+'",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "os.cpu_count() gives the number of logical CPUs",
+            "platform.node() returns the hostname",
+            "platform.python_version() gives the Python version string"
+          ],
+          "solution": "import os\nimport platform\n\ndef detect_resources() -> dict:\n    return {\n        \"cpu_count\": os.cpu_count(),\n        \"hostname\": platform.node(),\n        \"python_version\": platform.python_version(),\n        \"os_name\": platform.system(),\n    }\n"
+        },
+        {
+          "id": "foundations-python-code2",
+          "title": "Parallel File Processor",
+          "description": "Write a function that takes a list of file paths and a processing\nfunction, and applies the function to each file in parallel using\nmultiprocessing.Pool.  Return a list of results in the same order\nas the input files.  If any file raises an exception, include None\nfor that file in the result list.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "from multiprocessing import Pool\nfrom typing import Callable, Any\n\ndef parallel_process(\n    files: list[str],\n    func: Callable[[str], Any],\n    num_workers: int = 4\n) -> list[Any]:\n    \"\"\"\n    Apply func to each file in parallel using num_workers processes.\n    Return results in the same order as files.\n    If a file raises an exception, use None as the result.\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: Process 3 files with a simple function",
+              "input": "{\"files\": [\"/tmp/a.txt\", \"/tmp/b.txt\", \"/tmp/c.txt\"], \"func\": \"line_count\", \"num_workers\": 2}",
+              "expected_output": "[10, 20, 15]"
+            },
+            {
+              "label": "Test 2: Handle a missing file gracefully",
+              "input": "{\"files\": [\"/tmp/exists.txt\", \"/tmp/missing.txt\"], \"func\": \"line_count\", \"num_workers\": 2}",
+              "expected_output": "[10, null]"
+            },
+            {
+              "label": "Test 3: Empty file list",
+              "input": "{\"files\": [], \"func\": \"line_count\", \"num_workers\": 2}",
+              "expected_output": "[]",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "Pool.map preserves the order of results",
+            "Wrap the function call in a try/except to handle errors gracefully",
+            "You may need a wrapper function that catches exceptions and returns None"
+          ],
+          "solution": "from multiprocessing import Pool\nfrom typing import Callable, Any\n\ndef _safe_apply(args):\n    func, filepath = args\n    try:\n        return func(filepath)\n    except Exception:\n        return None\n\ndef parallel_process(\n    files: list[str],\n    func: Callable[[str], Any],\n    num_workers: int = 4\n) -> list[Any]:\n    if not files:\n        return []\n    args = [(func, f) for f in files]\n    with Pool(processes=num_workers) as pool:\n        results = pool.map(_safe_apply, args)\n    return results\n"
+        },
+        {
+          "id": "foundations-python-code3",
+          "title": "Config File Generator",
+          "description": "Write a function that generates an HPC cluster configuration as a\nPython dictionary.  Given a cluster name, node count, GPUs per node,\nand GPU model, return a nested dict suitable for YAML serialization.\nEach node should have a hostname like \"node-001\", \"node-002\", etc.\n",
+          "exercise_type": "coding",
+          "difficulty": 2,
+          "starter_code": "def generate_cluster_config(\n    cluster_name: str,\n    node_count: int,\n    gpus_per_node: int,\n    gpu_model: str = \"A100-80GB\"\n) -> dict:\n    \"\"\"\n    Return a dict with this structure:\n    {\n      \"cluster\": {\n        \"name\": cluster_name,\n        \"total_gpus\": node_count * gpus_per_node,\n        \"nodes\": [\n          {\"hostname\": \"node-001\", \"gpus\": gpus_per_node, \"gpu_model\": gpu_model},\n          ...\n        ]\n      }\n    }\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: Small cluster",
+              "input": "{\"cluster_name\": \"dev\", \"node_count\": 2, \"gpus_per_node\": 4, \"gpu_model\": \"A100-80GB\"}",
+              "expected_output": "{\"cluster\": {\"name\": \"dev\", \"total_gpus\": 8, \"nodes\": [{\"hostname\": \"node-001\", \"gpus\": 4, \"gpu_model\": \"A100-80GB\"}, {\"hostname\": \"node-002\", \"gpus\": 4, \"gpu_model\": \"A100-80GB\"}]}}"
+            },
+            {
+              "label": "Test 2: Single node",
+              "input": "{\"cluster_name\": \"test\", \"node_count\": 1, \"gpus_per_node\": 8}",
+              "expected_output": "{\"cluster\": {\"name\": \"test\", \"total_gpus\": 8, \"nodes\": [{\"hostname\": \"node-001\", \"gpus\": 8, \"gpu_model\": \"A100-80GB\"}]}}"
+            },
+            {
+              "label": "Test 3: Large cluster",
+              "input": "{\"cluster_name\": \"prod\", \"node_count\": 128, \"gpus_per_node\": 8, \"gpu_model\": \"H100-80GB\"}",
+              "expected_output": "len(result[\"cluster\"][\"nodes\"]) == 128 and result[\"cluster\"][\"total_gpus\"] == 1024",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "Use an f-string with zero-padding: f'node-{i:03d}'",
+            "Build the nodes list with a list comprehension"
+          ],
+          "solution": "def generate_cluster_config(\n    cluster_name: str,\n    node_count: int,\n    gpus_per_node: int,\n    gpu_model: str = \"A100-80GB\"\n) -> dict:\n    return {\n        \"cluster\": {\n            \"name\": cluster_name,\n            \"total_gpus\": node_count * gpus_per_node,\n            \"nodes\": [\n                {\n                    \"hostname\": f\"node-{i:03d}\",\n                    \"gpus\": gpus_per_node,\n                    \"gpu_model\": gpu_model,\n                }\n                for i in range(1, node_count + 1)\n            ],\n        }\n    }\n"
+        },
+        {
+          "id": "foundations-python-lab1",
+          "title": "Python HPC Automation Lab",
+          "description": "**Guided Lab: Building an HPC Resource Monitor in Python**\n\nIn this lab you will build a Python script that gathers system\ninformation and writes a JSON report — a common pattern in HPC\nmonitoring.\n\n**Step 1 — Gather system info**\n1. Import `os`, `platform`, `json`, and `subprocess`.\n2. Create a dict with hostname, CPU count, and Python version.\n3. Print the dict to verify.\n\n**Step 2 — Detect disk usage**\n1. Use `shutil.disk_usage(\"/\")` to get total, used, and free space.\n2. Convert bytes to GB (divide by 1024**3).\n3. Add the disk info to your dict.\n\n**Step 3 — Run a subprocess**\n1. Use `subprocess.run([\"uptime\"], capture_output=True, text=True)` to\n   get the system uptime.\n2. Parse the output and add it to your dict.\n\n**Step 4 — Write the report**\n1. Serialize the dict to JSON: `json.dumps(report, indent=2)`.\n2. Write it to `/tmp/system_report.json`.\n3. Read it back and verify the contents.\n\n**Step 5 — Add error handling**\n1. Wrap the subprocess call in a try/except.\n2. If the command fails, record \"unavailable\" instead of crashing.\n",
+          "exercise_type": "lab",
+          "difficulty": 2,
+          "hints": [
+            "shutil.disk_usage returns a named tuple with .total, .used, .free",
+            "json.dumps with indent=2 produces nicely formatted output"
+          ],
+          "solution": "import os\nimport platform\nimport json\nimport shutil\nimport subprocess\n\nreport = {\n    \"hostname\": platform.node(),\n    \"cpu_count\": os.cpu_count(),\n    \"python_version\": platform.python_version(),\n}\n\ndisk = shutil.disk_usage(\"/\")\nreport[\"disk\"] = {\n    \"total_gb\": round(disk.total / (1024**3), 1),\n    \"used_gb\": round(disk.used / (1024**3), 1),\n    \"free_gb\": round(disk.free / (1024**3), 1),\n}\n\ntry:\n    result = subprocess.run([\"uptime\"], capture_output=True, text=True, check=True)\n    report[\"uptime\"] = result.stdout.strip()\nexcept (subprocess.CalledProcessError, FileNotFoundError):\n    report[\"uptime\"] = \"unavailable\"\n\nwith open(\"/tmp/system_report.json\", \"w\") as f:\n    json.dump(report, f, indent=2)\n\nprint(json.dumps(report, indent=2))\n"
+        }
+      ]
+    },
+    {
+      "id": "networking",
+      "title": "Networking Fundamentals",
+      "order": 3,
+      "objectives": [
+        "Understand TCP/IP fundamentals and how they apply to HPC",
+        "Compare HPC networking technologies: InfiniBand vs Ethernet",
+        "Master SSH for secure remote access, tunneling, and ProxyJump",
+        "Transfer files efficiently with scp, rsync, and sftp",
+        "Diagnose network problems with standard tools"
+      ],
+      "content_md": "# Networking Fundamentals\n\nAI platform engineers must understand networking because distributed\ntraining, data pipelines, and cluster management all depend on\nreliable, fast networks. A misconfigured network can turn a\nstate-of-the-art GPU cluster into an expensive paperweight.\n\n---\n\n## 1. TCP/IP Fundamentals\n\nEvery network communication follows the TCP/IP model — four layers,\neach with a specific responsibility:\n\n```\n┌──────────────────────────────────────────────────────────────┐\n│                    APPLICATION LAYER                         │\n│  HTTP, SSH, DNS, NFS, NCCL (GPU communication)              │\n│  \"What are we saying?\"                                      │\n├──────────────────────────────────────────────────────────────┤\n│                    TRANSPORT LAYER                           │\n│  TCP (reliable, ordered) / UDP (fast, best-effort)          │\n│  \"How do we ensure delivery?\"                               │\n├──────────────────────────────────────────────────────────────┤\n│                    NETWORK LAYER (IP)                        │\n│  IP addressing, subnets, routing between networks           │\n│  \"Where is the destination?\"                                │\n├──────────────────────────────────────────────────────────────┤\n│                    LINK LAYER                                │\n│  Ethernet, InfiniBand, WiFi — physical transmission         │\n│  \"How do we send bits on the wire?\"                         │\n└──────────────────────────────────────────────────────────────┘\n```\n\n### IP Addressing and Subnets\n\nEvery device on a network has an IP address. In HPC clusters, you will\nencounter private addresses:\n\n```\n10.0.0.0/8       — 16 million addresses (large clusters)\n172.16.0.0/12    — 1 million addresses\n192.168.0.0/16   — 65,536 addresses (small labs)\n```\n\n**Subnet notation (CIDR):** `10.0.1.0/24` means:\n- Network: `10.0.1.0`\n- Mask: `255.255.255.0` (first 24 bits are the network part)\n- Hosts: `10.0.1.1` through `10.0.1.254` (254 usable)\n\n### Routing\n\n```\n┌──────────┐     ┌──────────┐     ┌──────────────┐\n│ Your     │────>│ Gateway  │────>│ Destination   │\n│ Machine  │     │ Router   │     │ Server        │\n│ 10.0.1.5 │     │ 10.0.1.1 │     │ 10.0.2.100   │\n└──────────┘     └──────────┘     └──────────────┘\n```\n\n```bash\n# View your routing table\nip route show\n# default via 10.0.1.1 dev eth0\n# 10.0.1.0/24 dev eth0 proto kernel scope link src 10.0.1.5\n```\n\n---\n\n## 2. HPC Networking: InfiniBand vs Ethernet\n\nStandard data center Ethernet runs at 10-100 Gbps. For AI training\nacross hundreds of GPUs, that is often a bottleneck. HPC clusters\nuse **InfiniBand** for its superior bandwidth and latency.\n\n```\n┌─────────────────────────────────────────────────────────┐\n│            Network Technology Comparison                 │\n├─────────────────┬────────────────┬──────────────────────┤\n│  Feature        │  Ethernet      │  InfiniBand          │\n├─────────────────┼────────────────┼──────────────────────┤\n│  Bandwidth      │  10-100 Gbps   │  200-400 Gbps (NDR)  │\n│  Latency        │  ~10-50 μs     │  ~0.5-1 μs           │\n│  RDMA           │  RoCE (lossy)  │  Native (lossless)   │\n│  CPU overhead   │  High          │  Near zero (RDMA)    │\n│  Cost per port  │  Low           │  High                │\n│  Use case       │  Management    │  GPU-to-GPU traffic  │\n└─────────────────┴────────────────┴──────────────────────┘\n```\n\n### RDMA — Remote Direct Memory Access\n\nRDMA allows one machine to read/write the memory of another machine\n**without involving either CPU or operating system kernel**. This is\ncritical for GPU-to-GPU communication in distributed training:\n\n```\nTraditional (TCP/IP):\nGPU → CPU → Kernel → NIC ──network──> NIC → Kernel → CPU → GPU\n              (many copies, high latency)\n\nRDMA (InfiniBand):\nGPU → NIC ──────────network──────────> NIC → GPU\n        (zero copy, sub-microsecond latency)\n```\n\n```bash\n# Check InfiniBand status on an HPC node\nibstat                   # Show IB device info\nibstatus                 # Brief IB status\nibv_devinfo              # Device capabilities\n\n# Benchmark InfiniBand bandwidth\n# Server: ib_write_bw -d mlx5_0 --report_gbits\n# Client: ib_write_bw -d mlx5_0 --report_gbits SERVER_IP\n```\n\n---\n\n## 3. SSH for HPC: Your Remote Access Lifeline\n\nSSH (Secure Shell) is how you access HPC clusters. Master these\npatterns and you will save hours every week.\n\n### Key-Based Authentication (required on most clusters)\n\n```bash\n# Generate a modern ed25519 key pair\nssh-keygen -t ed25519 -C \"jdoe@university.edu\"\n# Creates: ~/.ssh/id_ed25519 (private) and ~/.ssh/id_ed25519.pub (public)\n\n# Copy public key to the cluster\nssh-copy-id -i ~/.ssh/id_ed25519.pub user@hpc.example.com\n\n# Now login without a password\nssh user@hpc.example.com\n```\n\n### SSH Config File (~/.ssh/config)\n\nStop typing long commands. Configure your hosts once:\n\n```\n# ~/.ssh/config\n\nHost hpc\n    HostName login.hpc.university.edu\n    User jdoe\n    IdentityFile ~/.ssh/id_ed25519\n    ForwardAgent yes\n    ServerAliveInterval 60\n    ServerAliveCountMax 3\n\nHost hpc-gpu\n    HostName gpu-node-001\n    User jdoe\n    ProxyJump hpc\n    LocalForward 8888 localhost:8888\n    LocalForward 6006 localhost:6006\n```\n\nNow instead of:\n```bash\nssh -i ~/.ssh/id_ed25519 -J jdoe@login.hpc.university.edu jdoe@gpu-node-001\n```\nYou just type:\n```bash\nssh hpc-gpu\n```\n\n### Port Forwarding and Tunneling\n\n```\nYour Laptop          Login Node          GPU Node\n┌──────────┐        ┌──────────┐        ┌──────────┐\n│ Browser  │───────>│          │───────>│ Jupyter   │\n│ :8888    │  SSH   │  (jump)  │  SSH   │ :8888     │\n└──────────┘ tunnel └──────────┘ tunnel └──────────┘\n```\n\n```bash\n# Local port forwarding — access remote Jupyter locally\nssh -L 8888:localhost:8888 hpc-gpu\n\n# Dynamic SOCKS proxy — tunnel ALL traffic through the cluster\nssh -D 1080 hpc\n\n# Reverse forwarding — expose your local dev server to the cluster\nssh -R 5000:localhost:5000 hpc\n```\n\n---\n\n## 4. File Transfer: scp, rsync, sftp\n\n### scp — simple copies\n\n```bash\n# Copy a file TO the cluster\nscp model.pt hpc:/scratch/jdoe/models/\n\n# Copy a directory FROM the cluster\nscp -r hpc:/scratch/jdoe/results/ ./local_results/\n```\n\n### rsync — the smart choice for large transfers\n\n```bash\n# Sync a directory — only transfers CHANGED files\nrsync -avz --progress ./data/ hpc:/scratch/jdoe/data/\n\n# Resume an interrupted transfer\nrsync -avz --partial --progress large_file.tar.gz hpc:/scratch/jdoe/\n\n# Exclude unnecessary files\nrsync -avz --exclude='*.pyc' --exclude='__pycache__' \\\n      ./project/ hpc:/home/jdoe/project/\n\n# Dry run — see what WOULD be transferred\nrsync -avzn ./data/ hpc:/scratch/jdoe/data/\n```\n\n### When to use what\n\n```\n┌─────────┬──────────────────────────────────────────────┐\n│  Tool   │  Best for                                    │\n├─────────┼──────────────────────────────────────────────┤\n│  scp    │  Quick one-off copies of small files         │\n│  rsync  │  Large directories, incremental syncs,       │\n│         │  resuming interrupted transfers               │\n│  sftp   │  Interactive browsing and transfer            │\n└─────────┴──────────────────────────────────────────────┘\n```\n\n---\n\n## 5. Network Diagnostic Tools\n\nWhen things break (and they will), these tools help you figure out why.\n\n```bash\n# Is the host reachable?\nping -c 4 gpu-node-001              # Send 4 ICMP packets\n\n# Trace the route packets take\ntraceroute gpu-node-001             # Shows each hop\n\n# What ports are open / listening?\nss -tlnp                            # TCP listening ports with process names\nnetstat -tlnp                       # Older equivalent\n\n# Test bandwidth between two nodes\n# On server: iperf3 -s\n# On client: iperf3 -c server-ip\niperf3 -c 10.0.1.100 -t 10 -P 4   # 10 seconds, 4 parallel streams\n\n# DNS resolution\nnslookup hpc.university.edu\ndig hpc.university.edu +short\n\n# Show network interfaces and their IPs\nip addr show\nip link show                        # Interface status (up/down)\n\n# Check connectivity to a specific port\nnc -zv gpu-node-001 22              # Test SSH port\nnc -zv gpu-node-001 8888            # Test Jupyter port\n```\n\n---\n\n## 6. Network Topology Visualization\n\nExplore a typical HPC network topology interactively. Notice the\nseparate management (Ethernet) and data (InfiniBand) networks:\n\n:::interactive{component=\"NetworkTopologyViewer\"}\n\n---\n\n## Summary\n\n| Skill             | Key Concepts & Commands                          |\n|-------------------|--------------------------------------------------|\n| TCP/IP            | IP addresses, subnets, CIDR, routing tables      |\n| HPC networking    | InfiniBand, RDMA, 200-400 Gbps, sub-μs latency  |\n| SSH               | Key auth, config file, tunneling, ProxyJump      |\n| File transfer     | `scp`, `rsync -avz`, `sftp`                      |\n| Diagnostics       | `ping`, `traceroute`, `ss`, `iperf3`, `nc`       |\n",
+      "exercises": [
+        {
+          "id": "foundations-net-q1",
+          "title": "SSH Tunneling Quiz",
+          "description": "You need to access a Jupyter notebook running on port 8888 of a remote GPU node. Which SSH command creates a local port forward so you can open http://localhost:8888 in your browser?",
+          "exercise_type": "quiz",
+          "difficulty": 2,
+          "options": [
+            "ssh -R 8888:localhost:8888 gpu-node",
+            "ssh -L 8888:localhost:8888 gpu-node",
+            "ssh -D 8888 gpu-node",
+            "ssh -X gpu-node"
+          ],
+          "correct_answer": "ssh -L 8888:localhost:8888 gpu-node",
+          "hints": [
+            "-L means Local port forwarding — binds a LOCAL port to a remote service",
+            "-R is Reverse (remote) forwarding — the opposite direction"
+          ],
+          "solution": "ssh -L 8888:localhost:8888 gpu-node — this binds local port 8888 to the remote service on port 8888."
+        },
+        {
+          "id": "foundations-net-q2",
+          "title": "InfiniBand vs Ethernet",
+          "description": "What is the primary advantage of InfiniBand over Ethernet for distributed GPU training in HPC clusters?",
+          "exercise_type": "quiz",
+          "difficulty": 2,
+          "options": [
+            "Lower cost per port",
+            "Higher bandwidth and lower latency with native RDMA",
+            "Better WiFi compatibility",
+            "Simpler cable management"
+          ],
+          "correct_answer": "Higher bandwidth and lower latency with native RDMA",
+          "hints": [
+            "Distributed training requires transferring gradients between GPUs hundreds of times per second",
+            "RDMA bypasses the CPU and kernel, giving near-zero overhead"
+          ],
+          "solution": "Higher bandwidth and lower latency with native RDMA — InfiniBand provides 200-400 Gbps with sub-microsecond latency, critical for gradient synchronization."
+        },
+        {
+          "id": "foundations-net-code1",
+          "title": "SSH Config Builder",
+          "description": "Write a Python function that generates an SSH config file string.\nGiven a list of host configurations (dicts with name, hostname, user,\nand optional proxy_jump), produce a properly formatted ~/.ssh/config.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "def build_ssh_config(hosts: list[dict]) -> str:\n    \"\"\"\n    Generate SSH config text from a list of host dicts.\n    Each dict has:\n      - name: str (Host alias)\n      - hostname: str (HostName)\n      - user: str (User)\n      - proxy_jump: str or None (ProxyJump, optional)\n      - identity_file: str or None (IdentityFile, optional)\n\n    Return the complete config as a multi-line string.\n    Each host block should be separated by a blank line.\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: Single host, no proxy",
+              "input": "[{\"name\": \"hpc\", \"hostname\": \"login.hpc.edu\", \"user\": \"jdoe\", \"proxy_jump\": null, \"identity_file\": \"~/.ssh/id_ed25519\"}]",
+              "expected_output": "Host hpc\n    HostName login.hpc.edu\n    User jdoe\n    IdentityFile ~/.ssh/id_ed25519\n"
+            },
+            {
+              "label": "Test 2: Two hosts, second uses ProxyJump",
+              "input": "[{\"name\": \"hpc\", \"hostname\": \"login.hpc.edu\", \"user\": \"jdoe\", \"proxy_jump\": null, \"identity_file\": null}, {\"name\": \"gpu01\", \"hostname\": \"gpu-node-001\", \"user\": \"jdoe\", \"proxy_jump\": \"hpc\", \"identity_file\": null}]",
+              "expected_output": "Host hpc\n    HostName login.hpc.edu\n    User jdoe\n\nHost gpu01\n    HostName gpu-node-001\n    User jdoe\n    ProxyJump hpc\n"
+            },
+            {
+              "label": "Test 3: Empty list returns empty string",
+              "input": "[]",
+              "expected_output": "",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "Build each host block line by line, only including fields that are not None",
+            "Join blocks with a blank line separator"
+          ],
+          "solution": "def build_ssh_config(hosts: list[dict]) -> str:\n    blocks = []\n    for host in hosts:\n        lines = [\n            f\"Host {host['name']}\",\n            f\"    HostName {host['hostname']}\",\n            f\"    User {host['user']}\",\n        ]\n        if host.get(\"identity_file\"):\n            lines.append(f\"    IdentityFile {host['identity_file']}\")\n        if host.get(\"proxy_jump\"):\n            lines.append(f\"    ProxyJump {host['proxy_jump']}\")\n        blocks.append(\"\\n\".join(lines))\n    return \"\\n\\n\".join(blocks)\n"
+        },
+        {
+          "id": "foundations-net-code2",
+          "title": "Bandwidth Calculator",
+          "description": "Write a function that calculates how long it will take to transfer\na dataset across a network.  Given the dataset size (in GB), network\nbandwidth (in Gbps), and an efficiency factor (0.0 to 1.0 — real\nthroughput is always less than theoretical), return the transfer\ntime in seconds, minutes, and a human-readable string.\n",
+          "exercise_type": "coding",
+          "difficulty": 2,
+          "starter_code": "def calculate_transfer_time(\n    size_gb: float,\n    bandwidth_gbps: float,\n    efficiency: float = 0.7\n) -> dict:\n    \"\"\"\n    Calculate network transfer time.\n\n    Args:\n        size_gb: Dataset size in gigabytes\n        bandwidth_gbps: Network bandwidth in gigabits per second\n        efficiency: Fraction of theoretical bandwidth achieved (0.0-1.0)\n\n    Returns:\n        dict with keys:\n          - \"seconds\": float (total seconds)\n          - \"minutes\": float (total minutes, rounded to 1 decimal)\n          - \"human\": str (e.g. \"2 min 30 sec\" or \"1 hr 15 min\")\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: 100 GB over 100 Gbps InfiniBand",
+              "input": "{\"size_gb\": 100, \"bandwidth_gbps\": 100, \"efficiency\": 0.8}",
+              "expected_output": "{\"seconds\": 10.0, \"minutes\": 0.2, \"human\": \"10 sec\"}"
+            },
+            {
+              "label": "Test 2: 1 TB over 10 Gbps Ethernet",
+              "input": "{\"size_gb\": 1000, \"bandwidth_gbps\": 10, \"efficiency\": 0.7}",
+              "expected_output": "{\"seconds\": 1142.9, \"minutes\": 19.0, \"human\": \"19 min 3 sec\"}"
+            },
+            {
+              "label": "Test 3: Tiny transfer",
+              "input": "{\"size_gb\": 0.001, \"bandwidth_gbps\": 100, \"efficiency\": 0.9}",
+              "expected_output": "{\"seconds\": 0.0, \"minutes\": 0.0, \"human\": \"0 sec\"}",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "1 GB = 8 Gbits.  Convert size to bits first.",
+            "Effective bandwidth = bandwidth_gbps * efficiency",
+            "For the human-readable string, break into hours/minutes/seconds"
+          ],
+          "solution": "def calculate_transfer_time(\n    size_gb: float,\n    bandwidth_gbps: float,\n    efficiency: float = 0.7\n) -> dict:\n    size_gbits = size_gb * 8\n    effective_bw = bandwidth_gbps * efficiency\n    seconds = size_gbits / effective_bw\n    minutes = round(seconds / 60, 1)\n\n    # Human-readable\n    total_sec = int(seconds)\n    if total_sec >= 3600:\n        hrs = total_sec // 3600\n        mins = (total_sec % 3600) // 60\n        human = f\"{hrs} hr {mins} min\"\n    elif total_sec >= 60:\n        mins = total_sec // 60\n        secs = total_sec % 60\n        human = f\"{mins} min {secs} sec\"\n    else:\n        human = f\"{total_sec} sec\"\n\n    return {\n        \"seconds\": round(seconds, 1),\n        \"minutes\": minutes,\n        \"human\": human,\n    }\n"
+        },
+        {
+          "id": "foundations-net-lab1",
+          "title": "Network Diagnostics Lab",
+          "description": "**Guided Lab: Diagnosing Network Connectivity on an HPC Cluster**\n\nIn this hands-on lab you will use standard network tools to\ninvestigate connectivity and performance.\n\n**Step 1 — Check your network interfaces**\n1. Run `ip addr show` to list all interfaces.\n2. Identify the management (eth0) and high-speed (ib0) interfaces.\n3. Note the IP addresses assigned to each.\n\n**Step 2 — Test basic connectivity**\n1. Ping the default gateway: `ping -c 4 $(ip route | grep default | awk '{print $3}')`.\n2. Ping a cluster node: `ping -c 4 gpu-node-001`.\n3. Note the round-trip times — are they consistent?\n\n**Step 3 — Trace the route**\n1. Run `traceroute gpu-node-001` to see the path.\n2. How many hops? In an HPC cluster, it should be 1-2 hops (through a switch).\n3. Compare with `traceroute google.com` (many hops through the internet).\n\n**Step 4 — Check listening ports**\n1. Run `ss -tlnp` to see what services are listening.\n2. Look for sshd on port 22.\n3. If a Jupyter server is running, look for port 8888.\n\n**Step 5 — Test bandwidth (if iperf3 is available)**\n1. On another node: `iperf3 -s` (starts the server).\n2. On your node: `iperf3 -c OTHER_NODE_IP -t 5`.\n3. Compare the result with the theoretical bandwidth of the link.\n\n**Step 6 — Check DNS resolution**\n1. `nslookup gpu-node-001` — does it resolve?\n2. `cat /etc/resolv.conf` — what DNS servers are configured?\n",
+          "exercise_type": "lab",
+          "difficulty": 3,
+          "hints": [
+            "On many HPC clusters, ib0 is the InfiniBand interface",
+            "If ping fails, check if ICMP is blocked by a firewall",
+            "iperf3 bandwidth results are in Gbits/sec by default"
+          ],
+          "solution": "# Step 1\nip addr show\n\n# Step 2\nping -c 4 $(ip route | grep default | awk '{print $3}')\nping -c 4 gpu-node-001\n\n# Step 3\ntraceroute gpu-node-001\ntraceroute google.com\n\n# Step 4\nss -tlnp\n\n# Step 5\n# On server node: iperf3 -s\niperf3 -c gpu-node-001 -t 5\n\n# Step 6\nnslookup gpu-node-001\ncat /etc/resolv.conf\n"
+        },
+        {
+          "id": "foundations-net-q3",
+          "title": "rsync vs scp Quiz",
+          "description": "You are transferring a 500 GB dataset to a remote cluster and the transfer fails at 80%. What is the BEST tool and command to resume the transfer efficiently?",
+          "exercise_type": "quiz",
+          "difficulty": 3,
+          "options": [
+            "scp -r data/ hpc:/scratch/ (start over)",
+            "rsync -avz --partial --progress data/ hpc:/scratch/data/",
+            "sftp hpc and manually upload missing files",
+            "tar the data and scp the archive"
+          ],
+          "correct_answer": "rsync -avz --partial --progress data/ hpc:/scratch/data/",
+          "hints": [
+            "rsync compares source and destination and only transfers what's different",
+            "The --partial flag keeps partially transferred files so they can be resumed"
+          ],
+          "solution": "rsync -avz --partial --progress data/ hpc:/scratch/data/ — rsync only transfers the remaining 20% and resumes any partially transferred files."
+        }
+      ]
+    },
+    {
+      "id": "git",
+      "title": "Version Control with Git",
+      "order": 4,
+      "objectives": [
+        "Use Git for tracking experiments, configs, and scripts on HPC",
+        "Master the core workflow: init, add, commit, diff, log, branch, merge",
+        "Work with remote repositories: clone, push, pull, fetch, rebase",
+        "Apply HPC-specific Git patterns: .gitignore, LFS, submodules",
+        "Collaborate effectively with pull requests and code review"
+      ],
+      "content_md": "# Version Control with Git\n\nEvery piece of infrastructure code, training script, job configuration,\nand experiment config should be version-controlled. In HPC/AI work, Git\nis not just for collaboration — it is how you keep your sanity when\nrunning hundreds of experiments across dozens of nodes.\n\n---\n\n## 1. Why Git Matters for HPC\n\nWithout version control, you end up with:\n```\ntrain.py\ntrain_v2.py\ntrain_v2_fixed.py\ntrain_v2_fixed_FINAL.py\ntrain_v2_fixed_FINAL_actually_final.py    ← we've all been here\n```\n\nWith Git:\n```\ntrain.py                   (one file, full history)\ngit log --oneline:\n  a1b2c3d  Fix learning rate schedule for A100 GPUs\n  e4f5g6h  Add mixed precision training\n  i7j8k9l  Initial training script\n```\n\n---\n\n## 2. Core Git Workflow\n\n### Initial Setup\n\n```bash\n# Configure your identity (do this once)\ngit config --global user.name \"Jane Doe\"\ngit config --global user.email \"jdoe@university.edu\"\ngit config --global init.defaultBranch main\n\n# Optional but recommended\ngit config --global pull.rebase true    # Cleaner pull history\ngit config --global core.editor vim     # Your preferred editor\n```\n\n### The Fundamental Loop\n\n```\n┌─────────────┐    git add    ┌─────────────┐   git commit   ┌─────────────┐\n│  Working     │ ──────────> │  Staging     │ ────────────> │  Repository  │\n│  Directory   │             │  Area        │               │  (.git/)     │\n│  (modified)  │ <────────── │  (indexed)   │ <──────────── │  (committed) │\n└─────────────┘  git restore └─────────────┘  git reset     └─────────────┘\n```\n\n```bash\n# Start a new repo\ngit init my-hpc-project\ncd my-hpc-project\n\n# Or clone an existing one\ngit clone git@github.com:org/hpc-training.git\ncd hpc-training\n\n# The daily workflow\ngit status                      # What's changed?\ngit diff                        # See the actual changes\ngit add train.py config.yaml    # Stage specific files\ngit add -A                      # Stage everything\ngit commit -m \"Add distributed training support\"\n\n# View history\ngit log --oneline --graph --all    # Compact visual history\ngit log -p train.py               # History of changes to one file\ngit show abc1234                   # See a specific commit\n```\n\n### Writing Good Commit Messages\n\n```\n# BAD commit messages:\n\"fix\"\n\"update\"\n\"stuff\"\n\"WIP\"\n\n# GOOD commit messages (imperative mood, explain WHY):\n\"Fix OOM error by reducing batch size to 32 on A100 nodes\"\n\"Add NCCL environment variables for multi-node training\"\n\"Switch optimizer from Adam to AdamW per paper v2 results\"\n```\n\n---\n\n## 3. Branching and Merging\n\nBranches let you work on features without breaking the main codebase.\n\n```bash\n# Create and switch to a new branch\ngit checkout -b feature/multi-node-training\n\n# List all branches\ngit branch -a\n\n# Switch between branches\ngit checkout main\ngit checkout feature/multi-node-training\n\n# Modern alternative (Git 2.23+)\ngit switch -c feature/multi-node-training\ngit switch main\n```\n\n### Merging\n\n```\nmain:     A ── B ── C ──────── F (merge commit)\n                       \\      /\nfeature:                D ── E\n```\n\n```bash\n# Merge a feature into main\ngit checkout main\ngit merge feature/multi-node-training\n\n# If there are conflicts:\n# 1. Git marks the conflicted files\n# 2. Edit them to resolve\n# 3. git add resolved_file.py\n# 4. git commit\n```\n\n### Rebasing (for cleaner history)\n\n```\nBefore rebase:\nmain:     A ── B ── C\n                \\\nfeature:         D ── E\n\nAfter rebase:\nmain:     A ── B ── C\n                      \\\nfeature:               D' ── E'\n```\n\n```bash\n# Rebase your feature branch onto latest main\ngit checkout feature/multi-node-training\ngit rebase main\n\n# Interactive rebase — squash messy commits\ngit rebase -i HEAD~3    # Rewrite last 3 commits\n```\n\n---\n\n## 4. Remote Workflows\n\n```bash\n# Add a remote\ngit remote add origin git@github.com:org/hpc-project.git\n\n# Push your branch\ngit push origin feature/multi-node-training\n\n# Set upstream tracking (first push)\ngit push -u origin feature/multi-node-training\n\n# Pull latest changes\ngit pull origin main\n\n# Fetch without merging (safer)\ngit fetch origin\ngit log origin/main..main   # See what's different\n```\n\n---\n\n## 5. HPC-Specific Git Patterns\n\n### .gitignore for HPC/AI Projects\n\n```gitignore\n# .gitignore\n\n# Data files — too large for Git\n*.h5\n*.hdf5\n*.parquet\n*.csv\ndata/\n\n# Model checkpoints\n*.pt\n*.pth\n*.onnx\n*.safetensors\ncheckpoints/\n\n# Logs and outputs\n*.log\nslurm-*.out\nwandb/\ntensorboard/\noutputs/\n\n# Python\n__pycache__/\n*.pyc\n.venv/\n*.egg-info/\n\n# Environment and secrets\n.env\n*.key\n*.pem\n\n# OS files\n.DS_Store\nThumbs.db\n```\n\n### Git LFS for Large Files\n\nSometimes you NEED to version large files (trained models, reference\ndatasets). Git LFS stores them outside the repo with pointers.\n\n```bash\n# Install and set up LFS\ngit lfs install\n\n# Track large file types\ngit lfs track \"*.pt\"\ngit lfs track \"*.safetensors\"\ngit lfs track \"data/reference_dataset.h5\"\n\n# This creates/updates .gitattributes — commit it!\ngit add .gitattributes\ngit commit -m \"Configure Git LFS for model files\"\n\n# Now git add/commit/push works normally — LFS handles the rest\ngit add model.pt\ngit commit -m \"Add trained model checkpoint\"\ngit push\n```\n\n### Submodules for Shared Libraries\n\n```bash\n# Add a shared library as a submodule\ngit submodule add git@github.com:org/hpc-utils.git lib/hpc-utils\n\n# Clone a repo that has submodules\ngit clone --recurse-submodules git@github.com:org/project.git\n\n# Update submodules to latest\ngit submodule update --remote --merge\n```\n\n---\n\n## 6. Collaboration: Pull Requests and Code Review\n\nThe standard collaboration workflow:\n\n```\n1. Fork or clone the repo\n2. Create a feature branch\n3. Make your changes, commit, push\n4. Open a Pull Request (PR) on GitHub/GitLab\n5. Teammates review the code\n6. Address feedback, push more commits\n7. Merge when approved\n```\n\n### Handling Merge Conflicts\n\n```\n<<<<<<< HEAD (your changes)\nlearning_rate = 0.001\n=======\nlearning_rate = 0.0005\n>>>>>>> feature/tune-lr (incoming changes)\n```\n\nTo resolve:\n1. Edit the file — pick the right value (or combine).\n2. Remove the `<<<<<<<`, `=======`, `>>>>>>>` markers.\n3. `git add` the file.\n4. `git commit`.\n\n---\n\n## Interactive Lab\n\nPractice the Git workflow in this guided environment — create repos,\nbranch, commit, merge, and resolve conflicts hands-on:\n\n:::interactive{component=\"GuidedLab\" config='{\"preset\":\"linux-files\"}'}\n\n---\n\n## Summary\n\n| Skill             | Key Commands                                     |\n|-------------------|--------------------------------------------------|\n| Core workflow     | `init`, `add`, `commit`, `status`, `diff`, `log` |\n| Branching         | `branch`, `checkout -b`, `switch`, `merge`        |\n| Remote ops        | `clone`, `push`, `pull`, `fetch`, `remote`        |\n| History           | `log --oneline --graph`, `show`, `blame`          |\n| HPC patterns      | `.gitignore`, `git lfs`, `submodule`              |\n| Collaboration     | PRs, code review, conflict resolution             |\n",
+      "exercises": [
+        {
+          "id": "foundations-git-q1",
+          "title": "Git Branching Quiz",
+          "description": "What is the key difference between `git merge` and `git rebase`?",
+          "exercise_type": "quiz",
+          "difficulty": 2,
+          "options": [
+            "They are identical operations",
+            "Merge creates a merge commit preserving branch history; rebase replays commits linearly onto the target",
+            "Rebase can only be used on remote branches",
+            "Merge is always faster than rebase"
+          ],
+          "correct_answer": "Merge creates a merge commit preserving branch history; rebase replays commits linearly onto the target",
+          "hints": [
+            "Think about how each operation changes the commit graph",
+            "Merge preserves the true history; rebase creates a linear history"
+          ],
+          "solution": "Merge creates a merge commit that joins two branches; rebase rewrites history by replaying commits on top of the target branch, creating a linear history."
+        },
+        {
+          "id": "foundations-git-q2",
+          "title": "Git LFS Quiz",
+          "description": "Your HPC project has 50 GB of model checkpoints that need version control. What is the best approach?",
+          "exercise_type": "quiz",
+          "difficulty": 2,
+          "options": [
+            "Just git add them — Git handles large files fine",
+            "Use Git LFS to track *.pt files and store them with LFS pointers",
+            "Put them in .gitignore and manage them manually",
+            "Compress them into a single tar file and commit that"
+          ],
+          "correct_answer": "Use Git LFS to track *.pt files and store them with LFS pointers",
+          "hints": [
+            "Standard Git stores every version of every file in .git/ — 50 GB of checkpoints would make cloning impossible",
+            "Git LFS stores large files on a separate server and only downloads them when needed"
+          ],
+          "solution": "Use Git LFS — it replaces large files with lightweight pointers in the repo and stores the actual files on a separate LFS server."
+        },
+        {
+          "id": "foundations-git-code1",
+          "title": "Gitignore Pattern Builder",
+          "description": "Write a Python function that generates a .gitignore file for an HPC/AI\nproject.  Given lists of file extensions to ignore, directories to ignore,\nand specific files to ignore, produce a properly formatted .gitignore\nstring with section comments.\n",
+          "exercise_type": "coding",
+          "difficulty": 2,
+          "starter_code": "def build_gitignore(\n    extensions: list[str],\n    directories: list[str],\n    files: list[str],\n    project_name: str = \"HPC Project\"\n) -> str:\n    \"\"\"\n    Generate a .gitignore file string.\n\n    Args:\n        extensions: List of extensions to ignore (e.g., [\".pt\", \".log\"])\n        directories: List of directories to ignore (e.g., [\"data/\", \"__pycache__/\"])\n        files: List of specific files to ignore (e.g., [\".env\", \"secrets.yaml\"])\n        project_name: Name for the header comment\n\n    Returns:\n        Formatted .gitignore string with section headers.\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: Basic HPC gitignore",
+              "input": "{\"extensions\": [\".pt\", \".log\"], \"directories\": [\"data/\", \"__pycache__/\"], \"files\": [\".env\"], \"project_name\": \"My HPC Project\"}",
+              "expected_output": "# .gitignore for My HPC Project\n\n# File extensions\n*.pt\n*.log\n\n# Directories\ndata/\n__pycache__/\n\n# Specific files\n.env\n"
+            },
+            {
+              "label": "Test 2: Empty lists produce empty sections",
+              "input": "{\"extensions\": [], \"directories\": [\"logs/\"], \"files\": [], \"project_name\": \"Test\"}",
+              "expected_output": "# .gitignore for Test\n\n# Directories\nlogs/\n"
+            },
+            {
+              "label": "Test 3: Many extensions",
+              "input": "{\"extensions\": [\".pt\", \".pth\", \".onnx\", \".h5\", \".safetensors\"], \"directories\": [], \"files\": [\".env\"], \"project_name\": \"AI\"}",
+              "expected_output": "contains *.pt and *.safetensors and .env",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "Add a * prefix to each extension to make glob patterns",
+            "Only include section headers for non-empty lists",
+            "End the file with a newline"
+          ],
+          "solution": "def build_gitignore(\n    extensions: list[str],\n    directories: list[str],\n    files: list[str],\n    project_name: str = \"HPC Project\"\n) -> str:\n    lines = [f\"# .gitignore for {project_name}\", \"\"]\n\n    if extensions:\n        lines.append(\"# File extensions\")\n        for ext in extensions:\n            ext = ext if ext.startswith(\".\") else f\".{ext}\"\n            lines.append(f\"*{ext}\")\n        lines.append(\"\")\n\n    if directories:\n        lines.append(\"# Directories\")\n        for d in directories:\n            d = d if d.endswith(\"/\") else f\"{d}/\"\n            lines.append(d)\n        lines.append(\"\")\n\n    if files:\n        lines.append(\"# Specific files\")\n        for f in files:\n            lines.append(f)\n        lines.append(\"\")\n\n    return \"\\n\".join(lines)\n"
+        },
+        {
+          "id": "foundations-git-code2",
+          "title": "Commit Message Parser",
+          "description": "Write a function that parses `git log --oneline` output and returns\nstructured data.  Each line has the format: `<short_hash> <message>`.\nThe function should return a list of dicts and optionally filter by\na keyword.\n",
+          "exercise_type": "coding",
+          "difficulty": 2,
+          "starter_code": "def parse_git_log(log_output: str, keyword: str = None) -> list[dict]:\n    \"\"\"\n    Parse git log --oneline output.\n\n    Args:\n        log_output: Multi-line string from `git log --oneline`\n        keyword: Optional keyword to filter commits (case-insensitive)\n\n    Returns:\n        List of dicts with keys \"hash\" and \"message\".\n        If keyword is provided, only include commits whose message\n        contains the keyword (case-insensitive).\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: Parse three commits",
+              "input": "a1b2c3d Fix OOM error in training loop\ne4f5g6h Add multi-node support\ni7j8k9l Initial commit\n",
+              "expected_output": "[{\"hash\": \"a1b2c3d\", \"message\": \"Fix OOM error in training loop\"}, {\"hash\": \"e4f5g6h\", \"message\": \"Add multi-node support\"}, {\"hash\": \"i7j8k9l\", \"message\": \"Initial commit\"}]"
+            },
+            {
+              "label": "Test 2: Filter by keyword",
+              "input": "a1b2c3d Fix OOM error in training loop\ne4f5g6h Add multi-node support\ni7j8k9l Fix typo in config\n",
+              "expected_output": "[{\"hash\": \"a1b2c3d\", \"message\": \"Fix OOM error in training loop\"}, {\"hash\": \"i7j8k9l\", \"message\": \"Fix typo in config\"}]"
+            },
+            {
+              "label": "Test 3: Empty log",
+              "input": "",
+              "expected_output": "[]",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "Split on newline, then split each line at the first space",
+            "Use str.lower() for case-insensitive keyword matching",
+            "Handle empty/whitespace-only input"
+          ],
+          "solution": "def parse_git_log(log_output: str, keyword: str = None) -> list[dict]:\n    if not log_output.strip():\n        return []\n    commits = []\n    for line in log_output.strip().split(\"\\n\"):\n        line = line.strip()\n        if not line:\n            continue\n        parts = line.split(\" \", 1)\n        if len(parts) < 2:\n            continue\n        commit = {\"hash\": parts[0], \"message\": parts[1]}\n        if keyword is None or keyword.lower() in commit[\"message\"].lower():\n            commits.append(commit)\n    return commits\n"
+        },
+        {
+          "id": "foundations-git-code3",
+          "title": "Merge Conflict Resolver",
+          "description": "Write a function that detects and reports merge conflicts in a file.\nGiven the text content of a file, find all conflict blocks (delimited\nby <<<<<<< , =======, and >>>>>>>) and return a list of conflict\ndescriptions including line numbers and the two versions.\n",
+          "exercise_type": "coding",
+          "difficulty": 4,
+          "starter_code": "def find_conflicts(file_content: str) -> list[dict]:\n    \"\"\"\n    Find merge conflict blocks in file content.\n\n    Returns a list of dicts, each with:\n      - \"start_line\": int (1-based line number of <<<<<<<)\n      - \"separator_line\": int (line number of =======)\n      - \"end_line\": int (line number of >>>>>>>)\n      - \"ours\": str (content between <<<<<<< and =======)\n      - \"theirs\": str (content between ======= and >>>>>>>)\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: Single conflict",
+              "input": "normal line\n<<<<<<< HEAD\nlearning_rate = 0.001\n=======\nlearning_rate = 0.0005\n>>>>>>> feature/tune-lr\nanother normal line\n",
+              "expected_output": "[{\"start_line\": 2, \"separator_line\": 4, \"end_line\": 6, \"ours\": \"learning_rate = 0.001\", \"theirs\": \"learning_rate = 0.0005\"}]"
+            },
+            {
+              "label": "Test 2: No conflicts",
+              "input": "clean file\nno conflicts here\n",
+              "expected_output": "[]"
+            },
+            {
+              "label": "Test 3: Multiple conflicts",
+              "input": "<<<<<<< HEAD\na = 1\n=======\na = 2\n>>>>>>> branch\nok\n<<<<<<< HEAD\nb = 10\n=======\nb = 20\n>>>>>>> branch\n",
+              "expected_output": "len(result) == 2",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "Iterate through lines tracking state: outside, in_ours, in_theirs",
+            "When you hit <<<<<<< start a new conflict, ======= switches sides, >>>>>>> ends it",
+            "Accumulate lines for 'ours' and 'theirs' separately"
+          ],
+          "solution": "def find_conflicts(file_content: str) -> list[dict]:\n    lines = file_content.split(\"\\n\")\n    conflicts = []\n    i = 0\n    while i < len(lines):\n        if lines[i].startswith(\"<<<<<<<\"):\n            start_line = i + 1\n            ours_lines = []\n            theirs_lines = []\n            i += 1\n            while i < len(lines) and not lines[i].startswith(\"=======\"):\n                ours_lines.append(lines[i])\n                i += 1\n            separator_line = i + 1\n            i += 1\n            while i < len(lines) and not lines[i].startswith(\">>>>>>>\"):\n                theirs_lines.append(lines[i])\n                i += 1\n            end_line = i + 1\n            conflicts.append({\n                \"start_line\": start_line,\n                \"separator_line\": separator_line,\n                \"end_line\": end_line,\n                \"ours\": \"\\n\".join(ours_lines),\n                \"theirs\": \"\\n\".join(theirs_lines),\n            })\n        i += 1\n    return conflicts\n"
+        },
+        {
+          "id": "foundations-git-lab1",
+          "title": "Git Workflow Lab",
+          "description": "**Guided Lab: Complete Git Workflow for an HPC Project**\n\nPractice the full Git workflow from initialization to collaboration.\n\n**Step 1 — Initialize a repository**\n1. `mkdir /tmp/hpc-experiment && cd /tmp/hpc-experiment`\n2. `git init`\n3. Create a `train.py` file with a simple print statement.\n4. `git add train.py && git commit -m \"Initial training script\"`\n\n**Step 2 — Create a .gitignore**\n1. Create `.gitignore` with entries for `*.pt`, `*.log`, `data/`, `__pycache__/`\n2. `git add .gitignore && git commit -m \"Add .gitignore for HPC project\"`\n3. Verify: `touch model.pt && git status` — model.pt should be ignored.\n\n**Step 3 — Feature branch workflow**\n1. `git checkout -b feature/add-config`\n2. Create `config.yaml` with training hyperparameters.\n3. `git add config.yaml && git commit -m \"Add training configuration\"`\n4. `git checkout main`\n5. `git merge feature/add-config`\n6. `git log --oneline --graph`\n\n**Step 4 — Simulate a merge conflict**\n1. `git checkout -b branch-a && echo 'lr: 0.001' > config.yaml && git commit -am \"Set lr to 0.001\"`\n2. `git checkout main && git checkout -b branch-b && echo 'lr: 0.0005' > config.yaml && git commit -am \"Set lr to 0.0005\"`\n3. `git checkout main && git merge branch-a` (succeeds)\n4. `git merge branch-b` (CONFLICT!)\n5. Edit `config.yaml` to resolve, then `git add config.yaml && git commit`\n\n**Step 5 — Inspect history**\n1. `git log --oneline --graph --all`\n2. `git diff HEAD~2..HEAD`\n3. `git blame config.yaml`\n",
+          "exercise_type": "lab",
+          "difficulty": 3,
+          "hints": [
+            "Use `git status` frequently to understand what state you're in",
+            "When resolving conflicts, remove the <<<<<<< ======= >>>>>>> markers completely",
+            "git log --graph shows the branch structure visually"
+          ],
+          "solution": "mkdir /tmp/hpc-experiment && cd /tmp/hpc-experiment\ngit init\necho 'print(\"Training started\")' > train.py\ngit add train.py && git commit -m \"Initial training script\"\n\nprintf '*.pt\\n*.log\\ndata/\\n__pycache__/\\n' > .gitignore\ngit add .gitignore && git commit -m \"Add .gitignore for HPC project\"\n\ngit checkout -b feature/add-config\nprintf 'epochs: 100\\nlr: 0.001\\nbatch_size: 32\\n' > config.yaml\ngit add config.yaml && git commit -m \"Add training configuration\"\ngit checkout main\ngit merge feature/add-config\n\ngit checkout -b branch-a\necho 'lr: 0.001' > config.yaml && git commit -am \"Set lr to 0.001\"\ngit checkout main\ngit checkout -b branch-b\necho 'lr: 0.0005' > config.yaml && git commit -am \"Set lr to 0.0005\"\ngit checkout main && git merge branch-a\ngit merge branch-b  # conflict!\necho 'lr: 0.0005' > config.yaml  # resolve\ngit add config.yaml && git commit -m \"Resolve lr conflict: use 0.0005\"\ngit log --oneline --graph --all\n"
+        }
+      ]
+    },
+    {
+      "id": "shell-scripting",
+      "title": "Shell Scripting & Automation",
+      "order": 5,
+      "objectives": [
+        "Write robust Bash scripts for HPC automation",
+        "Use variables, loops, conditionals, and functions effectively",
+        "Write SLURM job scripts (preview for Module 2)",
+        "Implement proper error handling with set -euo pipefail and trap",
+        "Build practical scripts: job wrappers, log parsers, cleanup tools"
+      ],
+      "content_md": "# Shell Scripting & Automation\n\nShell scripts are the automation glue of HPC. They submit jobs, parse\nlogs, clean up scratch space, monitor GPU health, and chain workflows\ntogether. A well-written shell script can save you hours of manual\nwork every week.\n\n---\n\n## 1. Bash Script Fundamentals\n\nEvery bash script should start with a shebang and safety flags:\n\n```bash\n#!/bin/bash\nset -euo pipefail\n\n# What does set -euo pipefail do?\n# -e  : Exit immediately if any command fails (non-zero exit code)\n# -u  : Treat undefined variables as errors (catches typos!)\n# -o pipefail : A pipeline fails if ANY command in it fails\n#               (not just the last one)\n```\n\n### Why this matters\n\nWithout `set -euo pipefail`:\n```bash\nrm -rf $UNDEF_VAR/*    # $UNDEF_VAR is empty → this becomes rm -rf /*  😱\n```\n\nWith `set -u`:\n```bash\nrm -rf $UNDEF_VAR/*    # ERROR: UNDEF_VAR: unbound variable  ✓ (safe!)\n```\n\n---\n\n## 2. Variables and Data Types\n\n```bash\n# String variables\nCLUSTER_NAME=\"production-gpu\"\nJOB_NAME=\"bert-finetune\"\nOUTPUT_DIR=\"/scratch/$USER/results/${JOB_NAME}\"\n\n# Integer arithmetic\nNUM_NODES=4\nGPUS_PER_NODE=8\nTOTAL_GPUS=$((NUM_NODES * GPUS_PER_NODE))\necho \"Total GPUs: $TOTAL_GPUS\"    # 32\n\n# Default values (if variable is unset)\nBATCH_SIZE=\"${BATCH_SIZE:-32}\"      # Use 32 if BATCH_SIZE not set\nLOG_LEVEL=\"${LOG_LEVEL:-INFO}\"      # Use INFO if LOG_LEVEL not set\n\n# Read-only constants\nreadonly MAX_RETRIES=3\nreadonly SCRATCH=\"/scratch/$USER\"\n\n# Arrays\nNODES=(\"node-001\" \"node-002\" \"node-003\" \"node-004\")\necho \"First node: ${NODES[0]}\"\necho \"All nodes: ${NODES[@]}\"\necho \"Node count: ${#NODES[@]}\"\n```\n\n---\n\n## 3. String Manipulation\n\n```bash\nFILE=\"/scratch/jdoe/experiments/run_042/model_epoch_10.pt\"\n\n# Extraction\necho \"${FILE##*/}\"           # model_epoch_10.pt  (filename only)\necho \"${FILE%/*}\"            # /scratch/jdoe/experiments/run_042  (directory)\necho \"${FILE%.pt}\"           # ...model_epoch_10  (remove extension)\necho \"${FILE##*.}\"           # pt  (extension only)\n\n# Replacement\necho \"${FILE/run_042/run_043}\"   # Replace run_042 with run_043\n\n# Length\necho \"${#FILE}\"              # String length\n\n# Substrings\nSTR=\"Hello World\"\necho \"${STR:0:5}\"           # Hello\necho \"${STR:6}\"             # World\n```\n\n---\n\n## 4. Conditionals\n\n```bash\n# File tests\nif [[ -f \"$FILE\" ]]; then\n    echo \"File exists\"\nfi\n\nif [[ -d \"$DIR\" ]]; then\n    echo \"Directory exists\"\nfi\n\nif [[ -x \"$SCRIPT\" ]]; then\n    echo \"Script is executable\"\nfi\n\n# String comparison\nif [[ \"$STATUS\" == \"COMPLETED\" ]]; then\n    echo \"Job finished successfully\"\nelif [[ \"$STATUS\" == \"FAILED\" ]]; then\n    echo \"Job failed!\"\n    exit 1\nelse\n    echo \"Unknown status: $STATUS\"\nfi\n\n# Numeric comparison\nGPU_UTIL=95\nif (( GPU_UTIL > 90 )); then\n    echo \"WARNING: GPU utilization at ${GPU_UTIL}%\"\nfi\n\n# Combining conditions\nif [[ -f \"model.pt\" ]] && [[ $(stat -c%s \"model.pt\") -gt 1000000 ]]; then\n    echo \"Model checkpoint exists and is > 1 MB\"\nfi\n```\n\n---\n\n## 5. Loops\n\n```bash\n# For loop — iterate over a list\nfor node in node-{001..008}; do\n    echo \"Checking $node...\"\n    ssh \"$node\" hostname\ndone\n\n# For loop — iterate over files\nfor logfile in /scratch/$USER/logs/*.log; do\n    errors=$(grep -c \"ERROR\" \"$logfile\" 2>/dev/null || echo 0)\n    echo \"$logfile: $errors errors\"\ndone\n\n# C-style for loop\nfor ((i=0; i<10; i++)); do\n    echo \"Iteration $i\"\ndone\n\n# While loop — read a file line by line\nwhile IFS= read -r line; do\n    echo \"Processing: $line\"\ndone < nodes.txt\n\n# While loop — retry with backoff\nATTEMPT=0\nMAX_RETRIES=5\nwhile (( ATTEMPT < MAX_RETRIES )); do\n    if ssh node-001 hostname &>/dev/null; then\n        echo \"Node is up!\"\n        break\n    fi\n    ATTEMPT=$((ATTEMPT + 1))\n    echo \"Attempt $ATTEMPT failed, retrying in ${ATTEMPT}s...\"\n    sleep \"$ATTEMPT\"\ndone\n```\n\n---\n\n## 6. Functions\n\n```bash\n# Define a function\nlog_info() {\n    echo \"[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $*\"\n}\n\nlog_error() {\n    echo \"[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $*\" >&2\n}\n\ncheck_gpu_health() {\n    local node=\"$1\"\n    local threshold=\"${2:-90}\"\n\n    local util\n    util=$(ssh \"$node\" nvidia-smi \\\n        --query-gpu=utilization.gpu \\\n        --format=csv,noheader,nounits 2>/dev/null | head -1)\n\n    if [[ -z \"$util\" ]]; then\n        log_error \"$node: unable to query GPU\"\n        return 1\n    fi\n\n    if (( util > threshold )); then\n        log_info \"$node: GPU at ${util}% (above threshold)\"\n    else\n        log_info \"$node: GPU at ${util}% (OK)\"\n    fi\n}\n\n# Call the function\nlog_info \"Starting GPU health check\"\nfor node in node-{001..004}; do\n    check_gpu_health \"$node\" 85\ndone\n```\n\n---\n\n## 7. Error Handling with trap\n\n`trap` lets you run cleanup code when your script exits, even if it\ncrashes:\n\n```bash\n#!/bin/bash\nset -euo pipefail\n\nTMPDIR=$(mktemp -d)\n\n# This runs when the script exits (success, failure, or interrupt)\ncleanup() {\n    log_info \"Cleaning up temp directory: $TMPDIR\"\n    rm -rf \"$TMPDIR\"\n}\ntrap cleanup EXIT\n\n# This runs on errors specifically\non_error() {\n    log_error \"Script failed at line $1\"\n    # Could send an alert, write to a monitoring system, etc.\n}\ntrap 'on_error $LINENO' ERR\n\n# Now your script can use $TMPDIR freely — it WILL be cleaned up\ncp important_data.csv \"$TMPDIR/\"\nprocess_data \"$TMPDIR/important_data.csv\"\n```\n\n---\n\n## 8. SLURM Job Scripts (Preview for Module 2)\n\nSLURM is the dominant job scheduler on HPC clusters. Every job starts\nas a bash script with special `#SBATCH` directives:\n\n```bash\n#!/bin/bash\n#SBATCH --job-name=bert-train\n#SBATCH --partition=gpu\n#SBATCH --nodes=2\n#SBATCH --ntasks-per-node=1\n#SBATCH --gpus-per-node=4\n#SBATCH --cpus-per-task=16\n#SBATCH --mem=128G\n#SBATCH --time=24:00:00\n#SBATCH --output=logs/slurm-%j.out\n#SBATCH --error=logs/slurm-%j.err\n\nset -euo pipefail\n\n# Load required modules\nmodule purge\nmodule load cuda/12.2\nmodule load python/3.11\n\n# Activate virtual environment\nsource /scratch/$USER/envs/ml/bin/activate\n\n# Set distributed training environment variables\nexport MASTER_ADDR=$(scontrol show hostname \"$SLURM_JOB_NODELIST\" | head -n1)\nexport MASTER_PORT=29500\nexport WORLD_SIZE=$((SLURM_NNODES * SLURM_GPUS_PER_NODE))\n\necho \"Job ID: $SLURM_JOB_ID\"\necho \"Nodes: $SLURM_JOB_NODELIST\"\necho \"Master: $MASTER_ADDR:$MASTER_PORT\"\necho \"World size: $WORLD_SIZE\"\n\n# Launch distributed training\nsrun python -m torch.distributed.run \\\n    --nproc_per_node=$SLURM_GPUS_PER_NODE \\\n    --nnodes=$SLURM_NNODES \\\n    --master_addr=$MASTER_ADDR \\\n    --master_port=$MASTER_PORT \\\n    train.py \\\n    --batch-size 64 \\\n    --epochs 100 \\\n    --output-dir /scratch/$USER/results/$SLURM_JOB_ID\n```\n\nSubmit and manage:\n```bash\nsbatch train_job.sh              # Submit the job\nsqueue -u $USER                  # Check your jobs\nscancel 12345                    # Cancel a job\nsacct -j 12345 --format=Elapsed,MaxRSS,MaxVMSize  # Job stats\n```\n\n---\n\n## 9. Practical Script: Log Parser\n\n```bash\n#!/bin/bash\nset -euo pipefail\n\n# Parse SLURM output logs and extract training metrics\nparse_training_log() {\n    local logfile=\"$1\"\n\n    echo \"=== Report for: $logfile ===\"\n\n    # Extract final accuracy\n    local accuracy\n    accuracy=$(grep -oP 'accuracy:\\s+\\K[\\d.]+' \"$logfile\" | tail -1)\n    echo \"Final accuracy: ${accuracy:-N/A}\"\n\n    # Count warnings and errors\n    local warnings errors\n    warnings=$(grep -c \"WARNING\" \"$logfile\" 2>/dev/null || echo 0)\n    errors=$(grep -c \"ERROR\" \"$logfile\" 2>/dev/null || echo 0)\n    echo \"Warnings: $warnings\"\n    echo \"Errors: $errors\"\n\n    # Extract elapsed time\n    local elapsed\n    elapsed=$(grep -oP 'Total time:\\s+\\K.*' \"$logfile\" | tail -1)\n    echo \"Elapsed: ${elapsed:-N/A}\"\n\n    echo \"\"\n}\n\n# Process all SLURM logs\nfor log in logs/slurm-*.out; do\n    [[ -f \"$log\" ]] || continue\n    parse_training_log \"$log\"\ndone\n```\n\n---\n\n## 10. Interactive Process Scheduling Visualization\n\nExplore how job scheduling works — see how processes are assigned to\nCPUs and GPUs in an HPC environment:\n\n:::interactive{component=\"ProcessSchedulerViz\"}\n\n---\n\n## Summary\n\n| Skill              | Key Patterns                                       |\n|--------------------|----------------------------------------------------|\n| Safety             | `set -euo pipefail`, `trap cleanup EXIT`           |\n| Variables          | `${VAR:-default}`, `readonly`, arrays              |\n| Control flow       | `if [[ ]]`, `for .. in`, `while read`              |\n| Functions          | `local` variables, return codes, `$*` for args     |\n| String ops         | `${var##*/}`, `${var%.ext}`, `${var/old/new}`      |\n| SLURM              | `#SBATCH` directives, `srun`, `$SLURM_*` vars     |\n| Error handling     | `trap`, `|| true`, exit codes                      |\n",
+      "exercises": [
+        {
+          "id": "foundations-shell-q1",
+          "title": "set -euo pipefail Quiz",
+          "description": "What does `set -euo pipefail` do at the top of a bash script?",
+          "exercise_type": "quiz",
+          "difficulty": 1,
+          "options": [
+            "Enables verbose debug output",
+            "Exits on error, treats undefined variables as errors, and fails pipelines on any command failure",
+            "Sets the script to run as the root user",
+            "Enables syntax highlighting in the terminal"
+          ],
+          "correct_answer": "Exits on error, treats undefined variables as errors, and fails pipelines on any command failure",
+          "hints": [
+            "-e = exit on error, -u = undefined variables are errors, -o pipefail = pipe exit code is from the first failure"
+          ],
+          "solution": "-e exits on any command failure, -u treats unset variables as errors (preventing dangerous rm -rf $UNDEF/*), -o pipefail makes a pipeline return the exit code of the first failing command."
+        },
+        {
+          "id": "foundations-shell-q2",
+          "title": "SLURM Directives Quiz",
+          "description": "In a SLURM job script, which directive requests 4 GPUs per node?",
+          "exercise_type": "quiz",
+          "difficulty": 2,
+          "options": [
+            "#SBATCH --gpu=4",
+            "#SBATCH --gpus-per-node=4",
+            "#SBATCH --num-gpus=4",
+            "#SBATCH --gres=gpu:4"
+          ],
+          "correct_answer": "#SBATCH --gpus-per-node=4",
+          "hints": [
+            "SLURM uses --gpus-per-node or --gres=gpu:N syntax",
+            "Both --gpus-per-node=4 and --gres=gpu:4 work, but --gpus-per-node is more explicit"
+          ],
+          "solution": "#SBATCH --gpus-per-node=4 explicitly requests 4 GPUs on each allocated node. The alternative --gres=gpu:4 also works."
+        },
+        {
+          "id": "foundations-shell-code1",
+          "title": "SLURM Job Submission Script Builder",
+          "description": "Write a Python function that generates a SLURM job submission script.\nGiven job parameters (name, partition, nodes, GPUs, time limit, command),\nproduce a complete bash script with proper #SBATCH directives, module\nloading, and the execution command.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "def generate_slurm_script(\n    job_name: str,\n    partition: str = \"gpu\",\n    nodes: int = 1,\n    gpus_per_node: int = 4,\n    cpus_per_task: int = 8,\n    memory_gb: int = 64,\n    time_limit: str = \"12:00:00\",\n    modules: list[str] = None,\n    venv_path: str = None,\n    command: str = \"python train.py\"\n) -> str:\n    \"\"\"\n    Generate a SLURM job script as a string.\n\n    The script should include:\n    1. Shebang line (#!/bin/bash)\n    2. #SBATCH directives for all parameters\n    3. set -euo pipefail\n    4. module load commands (if modules provided)\n    5. Virtual environment activation (if venv_path provided)\n    6. The execution command\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: Basic GPU job",
+              "input": "{\"job_name\": \"test-job\", \"command\": \"python train.py\"}",
+              "expected_output": "contains #!/bin/bash and #SBATCH --job-name=test-job and #SBATCH --gpus-per-node=4 and python train.py"
+            },
+            {
+              "label": "Test 2: Multi-node with modules",
+              "input": "{\"job_name\": \"distributed\", \"nodes\": 4, \"gpus_per_node\": 8, \"modules\": [\"cuda/12.2\", \"python/3.11\"], \"command\": \"srun python train.py\"}",
+              "expected_output": "contains #SBATCH --nodes=4 and module load cuda/12.2 and module load python/3.11"
+            },
+            {
+              "label": "Test 3: With virtual environment",
+              "input": "{\"job_name\": \"venv-job\", \"venv_path\": \"/scratch/user/envs/ml\", \"command\": \"python run.py\"}",
+              "expected_output": "contains source /scratch/user/envs/ml/bin/activate",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "Build the script as a list of lines, then join with newlines",
+            "Remember to include module purge before module load commands",
+            "Add set -euo pipefail after the SBATCH directives"
+          ],
+          "solution": "def generate_slurm_script(\n    job_name: str,\n    partition: str = \"gpu\",\n    nodes: int = 1,\n    gpus_per_node: int = 4,\n    cpus_per_task: int = 8,\n    memory_gb: int = 64,\n    time_limit: str = \"12:00:00\",\n    modules: list[str] = None,\n    venv_path: str = None,\n    command: str = \"python train.py\"\n) -> str:\n    lines = [\n        \"#!/bin/bash\",\n        f\"#SBATCH --job-name={job_name}\",\n        f\"#SBATCH --partition={partition}\",\n        f\"#SBATCH --nodes={nodes}\",\n        f\"#SBATCH --gpus-per-node={gpus_per_node}\",\n        f\"#SBATCH --cpus-per-task={cpus_per_task}\",\n        f\"#SBATCH --mem={memory_gb}G\",\n        f\"#SBATCH --time={time_limit}\",\n        f\"#SBATCH --output=logs/slurm-%j.out\",\n        f\"#SBATCH --error=logs/slurm-%j.err\",\n        \"\",\n        \"set -euo pipefail\",\n        \"\",\n    ]\n\n    if modules:\n        lines.append(\"module purge\")\n        for mod in modules:\n            lines.append(f\"module load {mod}\")\n        lines.append(\"\")\n\n    if venv_path:\n        lines.append(f\"source {venv_path}/bin/activate\")\n        lines.append(\"\")\n\n    lines.append(command)\n    lines.append(\"\")\n\n    return \"\\n\".join(lines)\n"
+        },
+        {
+          "id": "foundations-shell-code2",
+          "title": "Training Log Parser",
+          "description": "Write a Python function that parses a multi-line training log and\nextracts epoch-level metrics.  Each log line with metrics has the\nformat:\n  Epoch 5/100 - loss: 0.2345 - accuracy: 0.8910 - lr: 0.0001\nReturn a list of dicts with the parsed values.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "import re\n\ndef parse_training_log(log_text: str) -> list[dict]:\n    \"\"\"\n    Parse training log and extract epoch metrics.\n\n    Args:\n        log_text: Multi-line log output\n\n    Returns:\n        List of dicts with keys:\n          - \"epoch\": int\n          - \"total_epochs\": int\n          - \"loss\": float\n          - \"accuracy\": float\n          - \"lr\": float\n    Only include lines that match the epoch metric format.\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: Parse three epochs",
+              "input": "Loading model...\nStarting training\nEpoch 1/10 - loss: 1.5432 - accuracy: 0.3210 - lr: 0.001\nEpoch 2/10 - loss: 0.9876 - accuracy: 0.5670 - lr: 0.001\nEpoch 3/10 - loss: 0.5432 - accuracy: 0.7890 - lr: 0.0005\nSaving checkpoint...\n",
+              "expected_output": "[{\"epoch\": 1, \"total_epochs\": 10, \"loss\": 1.5432, \"accuracy\": 0.321, \"lr\": 0.001}, {\"epoch\": 2, \"total_epochs\": 10, \"loss\": 0.9876, \"accuracy\": 0.567, \"lr\": 0.001}, {\"epoch\": 3, \"total_epochs\": 10, \"loss\": 0.5432, \"accuracy\": 0.789, \"lr\": 0.0005}]"
+            },
+            {
+              "label": "Test 2: No metric lines",
+              "input": "Loading model...\nDone.\n",
+              "expected_output": "[]"
+            },
+            {
+              "label": "Test 3: Single epoch",
+              "input": "Epoch 1/1 - loss: 0.1000 - accuracy: 0.9500 - lr: 0.0001",
+              "expected_output": "[{\"epoch\": 1, \"total_epochs\": 1, \"loss\": 0.1, \"accuracy\": 0.95, \"lr\": 0.0001}]",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "Use a regex pattern like r'Epoch (\\d+)/(\\d+) - loss: ([\\d.]+) - accuracy: ([\\d.]+) - lr: ([\\d.]+)'",
+            "re.findall or re.finditer will extract all matches",
+            "Convert captured groups to int/float as appropriate"
+          ],
+          "solution": "import re\n\ndef parse_training_log(log_text: str) -> list[dict]:\n    pattern = r'Epoch (\\d+)/(\\d+) - loss: ([\\d.]+) - accuracy: ([\\d.]+) - lr: ([\\d.]+)'\n    results = []\n    for match in re.finditer(pattern, log_text):\n        results.append({\n            \"epoch\": int(match.group(1)),\n            \"total_epochs\": int(match.group(2)),\n            \"loss\": float(match.group(3)),\n            \"accuracy\": float(match.group(4)),\n            \"lr\": float(match.group(5)),\n        })\n    return results\n"
+        },
+        {
+          "id": "foundations-shell-code3",
+          "title": "Scratch Space Cleanup Script",
+          "description": "Write a Python function that simulates an HPC scratch cleanup tool.\nGiven a list of file records (dicts with path, size_mb, and\nlast_modified as a datetime), return a cleanup plan: which files to\ndelete (older than a given number of days), how much space would be\nfreed, and which files to keep.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "from datetime import datetime, timedelta\n\ndef plan_cleanup(\n    files: list[dict],\n    max_age_days: int = 30,\n    now: datetime = None\n) -> dict:\n    \"\"\"\n    Plan a scratch space cleanup.\n\n    Args:\n        files: List of dicts with keys:\n            - \"path\": str\n            - \"size_mb\": float\n            - \"last_modified\": datetime\n        max_age_days: Files older than this will be marked for deletion\n        now: Current time (for testing). Defaults to datetime.now().\n\n    Returns:\n        dict with keys:\n          - \"to_delete\": list of file paths to delete\n          - \"to_keep\": list of file paths to keep\n          - \"space_freed_mb\": float (total size of files to delete)\n          - \"space_kept_mb\": float (total size of files to keep)\n    \"\"\"\n    # YOUR CODE HERE\n    pass\n",
+          "test_cases": [
+            {
+              "label": "Test 1: Mix of old and new files",
+              "input": "{\"files\": [{\"path\": \"/scratch/old.pt\", \"size_mb\": 500, \"last_modified\": \"2024-01-01\"}, {\"path\": \"/scratch/new.pt\", \"size_mb\": 200, \"last_modified\": \"2024-06-01\"}], \"max_age_days\": 30, \"now\": \"2024-06-15\"}",
+              "expected_output": "{\"to_delete\": [\"/scratch/old.pt\"], \"to_keep\": [\"/scratch/new.pt\"], \"space_freed_mb\": 500, \"space_kept_mb\": 200}"
+            },
+            {
+              "label": "Test 2: All files are recent",
+              "input": "{\"files\": [{\"path\": \"/scratch/a.dat\", \"size_mb\": 100, \"last_modified\": \"2024-06-10\"}], \"max_age_days\": 30, \"now\": \"2024-06-15\"}",
+              "expected_output": "{\"to_delete\": [], \"to_keep\": [\"/scratch/a.dat\"], \"space_freed_mb\": 0, \"space_kept_mb\": 100}"
+            },
+            {
+              "label": "Test 3: All files are old",
+              "input": "{\"files\": [{\"path\": \"/scratch/x.bin\", \"size_mb\": 1000, \"last_modified\": \"2024-01-01\"}, {\"path\": \"/scratch/y.bin\", \"size_mb\": 2000, \"last_modified\": \"2024-02-01\"}], \"max_age_days\": 30, \"now\": \"2024-06-15\"}",
+              "expected_output": "{\"to_delete\": [\"/scratch/x.bin\", \"/scratch/y.bin\"], \"to_keep\": [], \"space_freed_mb\": 3000, \"space_kept_mb\": 0}",
+              "hidden": true
+            }
+          ],
+          "hints": [
+            "Calculate the cutoff date: now - timedelta(days=max_age_days)",
+            "Compare each file's last_modified against the cutoff",
+            "Sum sizes separately for delete and keep lists"
+          ],
+          "solution": "from datetime import datetime, timedelta\n\ndef plan_cleanup(\n    files: list[dict],\n    max_age_days: int = 30,\n    now: datetime = None\n) -> dict:\n    if now is None:\n        now = datetime.now()\n    cutoff = now - timedelta(days=max_age_days)\n\n    to_delete = []\n    to_keep = []\n    space_freed = 0.0\n    space_kept = 0.0\n\n    for f in files:\n        if f[\"last_modified\"] < cutoff:\n            to_delete.append(f[\"path\"])\n            space_freed += f[\"size_mb\"]\n        else:\n            to_keep.append(f[\"path\"])\n            space_kept += f[\"size_mb\"]\n\n    return {\n        \"to_delete\": to_delete,\n        \"to_keep\": to_keep,\n        \"space_freed_mb\": space_freed,\n        \"space_kept_mb\": space_kept,\n    }\n"
+        },
+        {
+          "id": "foundations-shell-lab1",
+          "title": "Shell Scripting Automation Lab",
+          "description": "**Guided Lab: Building a Complete HPC Job Wrapper Script**\n\nIn this lab, you will write a bash script that wraps a training\ncommand with proper logging, error handling, and cleanup.\n\n**Step 1 — Script skeleton**\n1. Create a file `job_wrapper.sh` starting with:\n   ```bash\n   #!/bin/bash\n   set -euo pipefail\n   ```\n2. Add a `cleanup` function and a `trap cleanup EXIT`.\n3. Create a temporary directory with `mktemp -d`.\n\n**Step 2 — Add logging functions**\n1. Write `log_info()` and `log_error()` functions that include timestamps.\n2. Format: `[2024-06-01 12:00:00] [INFO] Your message here`\n3. Direct error messages to stderr with `>&2`.\n\n**Step 3 — Parse command-line arguments**\n1. Accept `--job-name`, `--epochs`, and `--output-dir` as arguments.\n2. Use a `while` loop with a `case` statement to parse them.\n3. Provide default values for any unset arguments.\n\n**Step 4 — Add the main logic**\n1. Create the output directory: `mkdir -p \"$OUTPUT_DIR\"`.\n2. Log the start time and parameters.\n3. Run the training command (simulated): `echo \"Training for $EPOCHS epochs...\"`.\n4. Log the end time and calculate elapsed time.\n\n**Step 5 — Test your script**\n1. `chmod +x job_wrapper.sh`\n2. `./job_wrapper.sh --job-name test --epochs 10 --output-dir /tmp/results`\n3. Test error handling: call a command that fails and verify cleanup runs.\n4. Test with missing arguments and verify defaults are used.\n",
+          "exercise_type": "lab",
+          "difficulty": 4,
+          "hints": [
+            "Use `date +%s` at the start and end to calculate elapsed seconds",
+            "For argument parsing, the `case` pattern handles --flag=value and --flag value forms",
+            "Test cleanup by adding `false` (always fails) somewhere in the script"
+          ],
+          "solution": "#!/bin/bash\nset -euo pipefail\n\nTMPDIR=$(mktemp -d)\nJOB_NAME=\"${JOB_NAME:-unnamed}\"\nEPOCHS=\"${EPOCHS:-100}\"\nOUTPUT_DIR=\"${OUTPUT_DIR:-/tmp/output}\"\n\nlog_info() { echo \"[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $*\"; }\nlog_error() { echo \"[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $*\" >&2; }\n\ncleanup() {\n    log_info \"Cleaning up $TMPDIR\"\n    rm -rf \"$TMPDIR\"\n}\ntrap cleanup EXIT\n\n# Parse arguments\nwhile [[ $# -gt 0 ]]; do\n    case \"$1\" in\n        --job-name) JOB_NAME=\"$2\"; shift 2 ;;\n        --epochs) EPOCHS=\"$2\"; shift 2 ;;\n        --output-dir) OUTPUT_DIR=\"$2\"; shift 2 ;;\n        *) log_error \"Unknown argument: $1\"; exit 1 ;;\n    esac\ndone\n\nmkdir -p \"$OUTPUT_DIR\"\nSTART=$(date +%s)\nlog_info \"Starting job: $JOB_NAME (epochs=$EPOCHS, output=$OUTPUT_DIR)\"\n\n# Simulated training\nfor ((e=1; e<=EPOCHS; e++)); do\n    echo \"Epoch $e/$EPOCHS - loss: 0.$((RANDOM % 1000))\"\n    sleep 0.1\ndone > \"$OUTPUT_DIR/training.log\"\n\nEND=$(date +%s)\nELAPSED=$((END - START))\nlog_info \"Job completed in ${ELAPSED}s. Output: $OUTPUT_DIR\"\n"
+        }
+      ]
+    }
+  ]
+}

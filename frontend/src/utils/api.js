@@ -1,342 +1,35 @@
+// API layer — pure code, no inline data
+// All demo/mock data lives in frontend/src/data/*.json
+
 import { getAccessToken, setAccessToken } from './auth';
+import DEMO_MODULES from '../data/modules.json';
+import DEMO_USER from '../data/demoUser.json';
+import DEMO_LESSON_CONTENT from '../data/lessonContent.json';
+import INTERACTIVE_MAP from '../data/interactiveContent.json';
+import {
+  DEMO_DASHBOARD,
+  DEMO_LEARNING_PATH,
+  DEMO_TEMPLATES,
+  generateDemoLessonContent,
+  generateDemoExercises,
+} from '../data/demoContent';
 
 const BASE_URL = '/api';
 
-// Demo / Mock Data
-const DEMO_USER = {
-  id: 1,
-  username: 'demo_engineer',
-  email: 'demo@hpcai.dev',
-  level: 'intermediate',
-  total_score: 2750,
-  current_streak: 12,
-  skills: {
-    linux: 78,
-    hpc: 62,
-    containers: 55,
-    ai_ml: 45,
-    platform_eng: 70,
-    cloud: 58,
-  },
-};
-
-const DEMO_MODULES = [
-  {
-    id: 1,
-    title: 'Linux & Command Line Mastery',
-    description: 'Master the Linux command line, shell scripting, and system administration fundamentals essential for HPC and AI platform engineering.',
-    level: 'beginner',
-    order_index: 1,
-    estimated_hours: 12,
-    skills: ['Linux', 'Bash', 'System Admin'],
-    prerequisites: [],
-    lessons: [
-      { id: 1, slug: 'linux-cli', title: 'Introduction to the Linux Shell', order_index: 1, estimated_minutes: 45, objectives: ['Understand shell basics', 'Navigate the filesystem', 'Use basic commands'], exercise_count: 3, completed: true },
-      { id: 2, slug: 'linux-cli', title: 'File System & Permissions', order_index: 2, estimated_minutes: 60, objectives: ['Understand Linux file hierarchy', 'Manage file permissions', 'Use chmod and chown'], exercise_count: 4, completed: true },
-      { id: 3, slug: 'shell-scripting', title: 'Shell Scripting Fundamentals', order_index: 3, estimated_minutes: 90, objectives: ['Write bash scripts', 'Use variables and loops', 'Handle arguments'], exercise_count: 5, completed: false },
-      { id: 4, slug: 'python-infra', title: 'Process Management & Monitoring', order_index: 4, estimated_minutes: 60, objectives: ['Manage processes', 'Use top/htop', 'Understand signals'], exercise_count: 3, completed: false },
-      { id: 5, slug: 'networking', title: 'Networking Basics', order_index: 5, estimated_minutes: 75, objectives: ['Understand TCP/IP', 'Use SSH effectively', 'Network troubleshooting'], exercise_count: 4, completed: false },
-    ],
-    completion_percentage: 40,
-    status: 'in_progress',
-  },
-  {
-    id: 2,
-    title: 'HPC Fundamentals & Job Scheduling',
-    description: 'Learn high-performance computing concepts, cluster architecture, job schedulers (SLURM), and parallel computing paradigms.',
-    level: 'beginner',
-    order_index: 2,
-    estimated_hours: 15,
-    skills: ['HPC', 'SLURM', 'MPI', 'Parallel Computing'],
-    prerequisites: ['Linux & Command Line Mastery'],
-    lessons: [
-      { id: 6, slug: 'cluster-architecture', title: 'HPC Architecture Overview', order_index: 1, estimated_minutes: 60, objectives: ['Understand cluster architecture', 'Learn about interconnects', 'Know compute vs storage nodes'], exercise_count: 3, completed: true },
-      { id: 7, slug: 'slurm-fundamentals', title: 'Introduction to SLURM', order_index: 2, estimated_minutes: 90, objectives: ['Submit jobs with sbatch', 'Monitor jobs with squeue', 'Configure job resources'], exercise_count: 5, completed: false },
-      { id: 8, slug: 'mpi-programming', title: 'Parallel Computing with MPI', order_index: 3, estimated_minutes: 120, objectives: ['Understand message passing', 'Write basic MPI programs', 'Run multi-node jobs'], exercise_count: 4, completed: false },
-      { id: 9, slug: 'gpu-cuda-fundamentals', title: 'GPU Computing Basics', order_index: 4, estimated_minutes: 90, objectives: ['Understand GPU architecture', 'CUDA fundamentals', 'GPU job scheduling'], exercise_count: 4, completed: false },
-    ],
-    completion_percentage: 25,
-    status: 'in_progress',
-  },
-  {
-    id: 3,
-    title: 'Containers & Orchestration',
-    description: 'Master containerization with Docker and Singularity, learn Kubernetes for orchestrating AI/HPC workloads at scale.',
-    level: 'intermediate',
-    order_index: 3,
-    estimated_hours: 18,
-    skills: ['Docker', 'Singularity', 'Kubernetes', 'Container Security'],
-    prerequisites: ['Linux & Command Line Mastery', 'HPC Fundamentals & Job Scheduling'],
-    lessons: [
-      { id: 10, slug: 'docker-fundamentals', title: 'Docker Fundamentals', order_index: 1, estimated_minutes: 90, objectives: ['Build Docker images', 'Manage containers', 'Docker networking'], exercise_count: 5, completed: false },
-      { id: 11, slug: 'singularity-apptainer', title: 'Singularity for HPC', order_index: 2, estimated_minutes: 75, objectives: ['Build Singularity containers', 'Run on HPC clusters', 'GPU passthrough'], exercise_count: 4, completed: false },
-      { id: 12, slug: 'kubernetes-core', title: 'Kubernetes Architecture', order_index: 3, estimated_minutes: 90, objectives: ['Understand K8s components', 'Deploy applications', 'Service discovery'], exercise_count: 4, completed: false },
-      { id: 13, slug: 'kubernetes-gpu', title: 'K8s for AI Workloads', order_index: 4, estimated_minutes: 120, objectives: ['GPU scheduling in K8s', 'Helm charts', 'Resource management'], exercise_count: 5, completed: false },
-    ],
-    completion_percentage: 0,
-    status: 'available',
-  },
-  {
-    id: 4,
-    title: 'AI/ML Infrastructure & Frameworks',
-    description: 'Build and manage AI/ML training infrastructure, distributed training with PyTorch/TensorFlow, and model serving pipelines.',
-    level: 'intermediate',
-    order_index: 4,
-    estimated_hours: 20,
-    skills: ['PyTorch', 'TensorFlow', 'Distributed Training', 'MLOps'],
-    prerequisites: ['Containers & Orchestration'],
-    lessons: [
-      { id: 14, slug: 'ml-frameworks', title: 'ML Framework Environments', order_index: 1, estimated_minutes: 60, objectives: ['Set up PyTorch/TF environments', 'Manage CUDA versions', 'Virtual environments'], exercise_count: 3, completed: false },
-      { id: 15, slug: 'distributed-training', title: 'Distributed Training', order_index: 2, estimated_minutes: 120, objectives: ['Data parallelism', 'Model parallelism', 'Multi-GPU training'], exercise_count: 5, completed: false },
-      { id: 16, slug: 'model-serving', title: 'Model Serving & Inference', order_index: 3, estimated_minutes: 90, objectives: ['TorchServe/TF Serving', 'Triton Inference Server', 'Optimization'], exercise_count: 4, completed: false },
-      { id: 17, slug: 'mlops-pipelines', title: 'MLOps Pipelines', order_index: 4, estimated_minutes: 90, objectives: ['CI/CD for ML', 'Experiment tracking', 'Model registry'], exercise_count: 4, completed: false },
-    ],
-    completion_percentage: 0,
-    status: 'locked',
-  },
-  {
-    id: 5,
-    title: 'Platform Engineering for AI',
-    description: 'Design and implement internal developer platforms for AI teams: IaC, observability, self-service portals, and GitOps workflows.',
-    level: 'advanced',
-    order_index: 5,
-    estimated_hours: 22,
-    skills: ['Terraform', 'GitOps', 'Observability', 'Platform Design'],
-    prerequisites: ['Containers & Orchestration', 'AI/ML Infrastructure & Frameworks'],
-    lessons: [
-      { id: 18, slug: 'infrastructure-as-code', title: 'Infrastructure as Code', order_index: 1, estimated_minutes: 90, objectives: ['Terraform for HPC', 'Ansible automation', 'State management'], exercise_count: 5, completed: false },
-      { id: 19, slug: 'gitops-argocd', title: 'GitOps & ArgoCD', order_index: 2, estimated_minutes: 90, objectives: ['GitOps principles', 'ArgoCD setup', 'Declarative infrastructure'], exercise_count: 4, completed: false },
-      { id: 20, slug: 'observability-stack', title: 'Observability Stack', order_index: 3, estimated_minutes: 120, objectives: ['Prometheus/Grafana', 'GPU metrics', 'Alerting'], exercise_count: 5, completed: false },
-      { id: 21, slug: 'self-service-platforms', title: 'Self-Service Platforms', order_index: 4, estimated_minutes: 90, objectives: ['Backstage/Port', 'Service catalogs', 'Developer experience'], exercise_count: 3, completed: false },
-    ],
-    completion_percentage: 0,
-    status: 'locked',
-  },
-  {
-    id: 6,
-    title: 'Enterprise AI at Scale',
-    description: 'Production-grade AI platform operations: multi-tenancy, security, cost optimization, compliance, and large-scale LLM deployment.',
-    level: 'professional',
-    order_index: 6,
-    estimated_hours: 25,
-    skills: ['Security', 'Multi-tenancy', 'Cost Optimization', 'LLM Ops'],
-    prerequisites: ['Platform Engineering for AI'],
-    lessons: [
-      { id: 22, slug: 'multi-tenant-platforms', title: 'Multi-tenant AI Platforms', order_index: 1, estimated_minutes: 120, objectives: ['Namespace isolation', 'Resource quotas', 'Fair scheduling'], exercise_count: 4, completed: false },
-      { id: 23, slug: 'security-compliance', title: 'Security & Compliance', order_index: 2, estimated_minutes: 90, objectives: ['RBAC', 'Network policies', 'Data governance'], exercise_count: 4, completed: false },
-      { id: 24, slug: 'cost-optimization', title: 'Cost Optimization', order_index: 3, estimated_minutes: 90, objectives: ['GPU utilization', 'Spot instances', 'Chargeback models'], exercise_count: 3, completed: false },
-      { id: 25, slug: 'llm-deployment', title: 'Large-Scale LLM Deployment', order_index: 4, estimated_minutes: 150, objectives: ['LLM serving patterns', 'vLLM/TGI', 'RAG infrastructure'], exercise_count: 5, completed: false },
-    ],
-    completion_percentage: 0,
-    status: 'locked',
-  },
-];
-
-const DEMO_LESSON_CONTENT = {
-  1: {
-    id: 1,
-    module_id: 1,
-    title: 'Introduction to the Linux Shell',
-    order_index: 1,
-    estimated_minutes: 45,
-    objectives: ['Understand what a shell is and its role in the operating system', 'Navigate the Linux filesystem using command-line tools', 'Execute basic commands for file and directory management'],
-    content: `# Introduction to the Linux Shell
-
-## What is a Shell?
-
-A **shell** is a command-line interface (CLI) that provides a way to interact with the operating system. It acts as an intermediary between the user and the kernel, translating commands into system calls.
-
-### Common Shell Types
-
-| Shell | Path | Description |
-|-------|------|-------------|
-| Bash | \`/bin/bash\` | Bourne Again Shell - most common on Linux |
-| Zsh | \`/bin/zsh\` | Z Shell - default on macOS |
-| Fish | \`/usr/bin/fish\` | Friendly Interactive Shell |
-
-## Your First Commands
-
-Let us start with some essential commands:
-
-\`\`\`bash
-# Print working directory
-pwd
-
-# List files and directories
-ls -la
-
-# Change directory
-cd /home/user
-
-# Create a directory
-mkdir my_hpc_project
-
-# Create a file
-touch hello.sh
-\`\`\`
-
-## Navigating the Filesystem
-
-The Linux filesystem is organized as a tree structure starting from the root \`/\`:
-
-\`\`\`
-/
-├── home/          # User home directories
-│   └── user/
-├── etc/           # System configuration
-├── var/           # Variable data (logs, etc.)
-├── tmp/           # Temporary files
-├── opt/           # Optional software
-└── usr/           # User programs
-    ├── bin/
-    └── lib/
-\`\`\`
-
-### Essential Navigation Commands
-
-\`\`\`bash
-# Go to home directory
-cd ~
-
-# Go up one level
-cd ..
-
-# Go to previous directory
-cd -
-
-# Show directory tree
-tree -L 2
-
-# Find files
-find /home -name "*.sh" -type f
-\`\`\`
-
-## File Operations
-
-\`\`\`bash
-# Copy files
-cp source.txt destination.txt
-
-# Move/rename files
-mv old_name.txt new_name.txt
-
-# Remove files (careful!)
-rm unwanted_file.txt
-
-# Remove directory recursively
-rm -rf old_directory/
-
-# View file contents
-cat config.yaml
-less large_log_file.log
-head -20 output.csv
-tail -f /var/log/syslog
-\`\`\`
-
-## Pro Tip: Tab Completion
-
-Always use **Tab** for auto-completion! It saves time and prevents typos. Double-tap Tab to see all possibilities.
-
-## HPC Context
-
-In HPC environments, you will be working extensively with the command line to:
-- Submit and monitor compute jobs
-- Manage large datasets
-- Configure software environments
-- Debug parallel applications
-
-> **Note**: Most HPC clusters run Linux (typically RHEL/CentOS or Ubuntu). Mastering the shell is your foundation for everything else in this course.
-`,
-    exercises: [
-      {
-        id: 1,
-        type: 'quiz',
-        title: 'Shell Basics Quiz',
-        description: 'Test your understanding of Linux shell concepts',
-        points: 10,
-        question: 'Which command displays the current working directory?',
-        options: ['ls', 'pwd', 'cd', 'whoami'],
-        correct_answer: 1,
-        hints: ['Think about what "print working directory" abbreviates to.'],
-      },
-      {
-        id: 2,
-        type: 'quiz',
-        title: 'Filesystem Navigation',
-        description: 'Test your knowledge of filesystem navigation',
-        points: 10,
-        question: 'What does "cd ~" do?',
-        options: [
-          'Changes to the root directory',
-          'Changes to the home directory',
-          'Changes to the previous directory',
-          'Lists the current directory',
-        ],
-        correct_answer: 1,
-        hints: ['The tilde (~) is a shortcut for a special directory.'],
-      },
-      {
-        id: 3,
-        type: 'coding',
-        title: 'Write a File Listing Script',
-        description: 'Write a bash command that lists all .py files in the current directory and its subdirectories',
-        points: 20,
-        starter_code: '# Write your command below\n',
-        expected_output: 'find . -name "*.py" -type f',
-        hints: [
-          'Use the find command',
-          'The -name flag filters by filename pattern',
-          'The -type f flag filters for files only',
-        ],
-      },
-    ],
-  },
-};
-
-const DEMO_DASHBOARD = {
-  user: DEMO_USER,
-  stats: {
-    total_modules: 6,
-    completed_modules: 0,
-    in_progress_modules: 2,
-    total_lessons: 25,
-    completed_lessons: 3,
-    current_streak: 12,
-    total_score: 2750,
-    level: 'intermediate',
-  },
-  recent_activity: [
-    { module_id: 1, module_title: 'Linux & Command Line Mastery', lesson_title: 'Shell Scripting Fundamentals', progress: 40, last_accessed: '2024-01-15T10:30:00Z' },
-    { module_id: 2, module_title: 'HPC Fundamentals & Job Scheduling', lesson_title: 'Introduction to SLURM', progress: 25, last_accessed: '2024-01-14T16:45:00Z' },
-    { module_id: 3, module_title: 'Containers & Orchestration', lesson_title: 'Docker Fundamentals', progress: 0, last_accessed: null },
-  ],
-  skills: DEMO_USER.skills,
-  overall_progress: 18,
-};
-
-const DEMO_LEARNING_PATH = {
-  modules: DEMO_MODULES.map((m) => ({
-    id: m.id,
-    title: m.title,
-    level: m.level,
-    status: m.status,
-    completion_percentage: m.completion_percentage,
-    estimated_hours: m.estimated_hours,
-    lesson_count: m.lessons.length,
-  })),
-  overall_progress: 18,
-};
-
-// API Helpers — v3.0 (in-memory token, HttpOnly cookie for refresh)
+// ── Helpers ──
 
 function getToken() {
-  // Primary: in-memory token (XSS-safe)
-  // Fallback: localStorage (demo/static mode compat)
   return getAccessToken() || localStorage.getItem('hpc_auth_token');
 }
 
-let isRefreshing = false;
-let refreshPromise = null;
+function buildInteractiveDirective(slug) {
+  const entry = INTERACTIVE_MAP[slug];
+  if (!entry) return '';
+  const cfg = entry.config ? ` config='${entry.config}'` : '';
+  return `:::interactive{component="${entry.component}"${cfg}}`;
+}
+
+// ── Core request with auto-refresh ──
 
 async function apiRequest(endpoint, options = {}) {
   const token = getToken();
@@ -350,39 +43,29 @@ async function apiRequest(endpoint, options = {}) {
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
       headers,
-      credentials: 'include', // Send HttpOnly cookies
+      credentials: 'include',
     });
 
-    // If response is not JSON (e.g. HTML 404 from GitHub Pages), treat as backend unavailable
     const contentType = response.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
       console.warn(`Backend unavailable for ${endpoint} (non-JSON response), using demo data`);
       return null;
     }
 
-    // Auto-refresh on 401 (token expired)
     if (response.status === 401 && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/login')) {
       try {
         const refreshData = await refreshTokenAPI();
         if (refreshData && refreshData.access_token) {
           setAccessToken(refreshData.access_token);
-          // Retry the original request with new token
-          const retryHeaders = {
-            ...headers,
-            Authorization: `Bearer ${refreshData.access_token}`,
-          };
+          const retryHeaders = { ...headers, Authorization: `Bearer ${refreshData.access_token}` };
           const retryResponse = await fetch(`${BASE_URL}${endpoint}`, {
             ...options,
             headers: retryHeaders,
             credentials: 'include',
           });
-          if (retryResponse.ok) {
-            return await retryResponse.json();
-          }
+          if (retryResponse.ok) return await retryResponse.json();
         }
-      } catch {
-        // Refresh failed
-      }
+      } catch { /* refresh failed */ }
     }
 
     if (!response.ok) {
@@ -400,7 +83,7 @@ async function apiRequest(endpoint, options = {}) {
   }
 }
 
-// Auth API
+// ── Auth API ──
 
 export async function loginAPI(email, password, totpCode = null) {
   try {
@@ -439,7 +122,7 @@ export async function registerAPI(username, email, password) {
 export async function refreshTokenAPI() {
   const response = await fetch(`${BASE_URL}/auth/refresh`, {
     method: 'POST',
-    credentials: 'include', // Sends HttpOnly cookie
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
   });
   if (!response.ok) return null;
@@ -513,7 +196,7 @@ export async function revokeAllSessionsAPI() {
   return await apiRequest('/auth/sessions/revoke-all', { method: 'POST' });
 }
 
-// Modules API
+// ── Modules API ──
 
 export async function getModulesAPI() {
   const data = await apiRequest('/modules');
@@ -527,152 +210,31 @@ export async function getModuleAPI(id) {
   return DEMO_MODULES.find((m) => m.id === Number(id)) || null;
 }
 
-// Rich demo content for static deployment — maps lesson slugs to interactive components
-const DEMO_INTERACTIVE_CONTENT = {
-  'linux-cli': ':::interactive{component="GuidedLab" config=\'{"preset":"linux-files"}\'}',
-  'python-infra': ':::interactive{component="GuidedLab" config=\'{"preset":"python-hpc"}\'}',
-  'networking': ':::interactive{component="NetworkTopologyViewer"}',
-  'shell-scripting': ':::interactive{component="ProcessSchedulerViz"}',
-  'cluster-architecture': ':::interactive{component="NetworkTopologyViewer"}',
-  'slurm-fundamentals': ':::interactive{component="SlurmSimulator"}',
-  'mpi-programming': ':::interactive{component="MPIVisualizer"}',
-  'hpc-storage': ':::interactive{component="StorageStripingSimulator"}',
-  'benchmarking': ':::interactive{component="StorageStripingSimulator"}',
-  'docker-fundamentals': ':::interactive{component="DockerLayerVisualizer"}',
-  'singularity-apptainer': ':::interactive{component="DockerLayerVisualizer"}',
-  'gpu-cuda-fundamentals': ':::interactive{component="GPUMemoryVisualizer"}',
-  'distributed-training': ':::interactive{component="MPIVisualizer"}',
-  'data-pipeline-engineering': ':::interactive{component="StorageStripingSimulator"}',
-};
-
-function generateDemoLessonContent(lesson, interactiveContent) {
-  const objectives = lesson.objectives?.map(o => `- ${o}`).join('\n') || '';
-  return `# ${lesson.title}
-
-## Overview
-
-This lesson provides **hands-on, practical training** in ${lesson.title.toLowerCase()}. You'll work through interactive exercises, run real code, and build skills directly applicable to production HPC systems.
-
-### Learning Objectives
-
-${objectives}
-
----
-
-## Interactive Lab
-
-Use the interactive component below to explore the concepts hands-on. Experiment with different configurations to build intuition.
-
-${interactiveContent}
-
----
-
-## Key Concepts
-
-${lesson.objectives?.map((o, i) => `### ${i + 1}. ${o}
-
-This is a core skill you'll need on production HPC systems. The interactive exercises in the sidebar will test your understanding with real code challenges.
-
-`).join('') || ''}
-
-## Practical Application
-
-\`\`\`python
-# Real-world example for ${lesson.title}
-import os
-import sys
-
-def main():
-    """
-    Practical ${lesson.title.toLowerCase()} implementation.
-    Modify this code and click 'Run' to see the results.
-    """
-    print(f"System: {os.uname().sysname} {os.uname().release}")
-    print(f"Python: {sys.version.split()[0]}")
-    print(f"Working on: ${lesson.title}")
-    # Add your implementation here
-
-if __name__ == "__main__":
-    main()
-\`\`\`
-
-> **Pro tip:** Complete all exercises in the sidebar panel to earn full marks. Each exercise tests a specific skill you'll use in production.
-
-## Summary
-
-In this lesson, you gained practical experience with ${lesson.title.toLowerCase()}. The interactive simulations and coding exercises above mirror real HPC workflows. Continue to the next lesson to build on these skills.
-`;
-}
-
-function generateDemoExercises(lesson, lessonId) {
-  const baseId = 100 + Number(lessonId);
-  const exercises = [
-    {
-      id: baseId,
-      type: 'quiz',
-      title: `${lesson.title} — Concept Check`,
-      description: 'Test your understanding of the core concepts.',
-      points: 10,
-      question: `Which of the following is a key concept in ${lesson.title}?`,
-      options: (lesson.objectives || []).slice(0, 4).map(o => o.substring(0, 60)),
-      correct_answer: 0,
-      hints: ['Review the learning objectives at the top of this lesson.', 'Think about which concept is most fundamental to this topic.'],
-    },
-    {
-      id: baseId + 1,
-      type: 'coding',
-      title: `${lesson.title} — Coding Challenge`,
-      description: `Write a Python function that demonstrates a key concept from ${lesson.title.toLowerCase()}. Your code should print results that can be verified.`,
-      points: 25,
-      starter_code: `# ${lesson.title} — Coding Challenge\n# Write your solution below\nimport os\nimport sys\n\ndef solve():\n    """Implement your solution here."""\n    # TODO: Your code here\n    print("Hello from ${lesson.title}")\n    return True\n\nif __name__ == "__main__":\n    result = solve()\n    print(f"Result: {result}")`,
-      test_cases: [
-        { label: 'Test 1: Function runs', input: '', expected_output: 'Hello from', hidden: false },
-        { label: 'Test 2: Returns True', input: '', expected_output: 'Result: True', hidden: false },
-      ],
-      hints: ['Start by reading the existing code and understanding what it does.', 'Make sure your function prints output and returns a value.', 'Check the test cases to see what output is expected.'],
-      solution: `import os\nimport sys\n\ndef solve():\n    print("Hello from ${lesson.title}")\n    return True\n\nif __name__ == "__main__":\n    result = solve()\n    print(f"Result: {result}")`,
-    },
-    {
-      id: baseId + 2,
-      type: 'coding',
-      title: `${lesson.title} — System Analysis`,
-      description: 'Write code to detect and report system resources. This is a fundamental HPC skill — every production script should start with resource detection.',
-      points: 25,
-      starter_code: `# System Resource Detector\nimport os\nimport multiprocessing\n\ndef detect_resources():\n    """Detect available system resources.\n    \n    Return a dict with:\n    - cpu_count: number of CPUs\n    - hostname: system hostname\n    - pid: current process ID\n    """\n    # TODO: Implement this\n    pass\n\nresources = detect_resources()\nfor key, value in sorted(resources.items()):\n    print(f"{key}: {value}")`,
-      test_cases: [
-        { label: 'Contains cpu_count', input: '', expected_output: 'cpu_count:', hidden: false },
-        { label: 'Contains hostname', input: '', expected_output: 'hostname:', hidden: false },
-        { label: 'Contains pid', input: '', expected_output: 'pid:', hidden: true },
-      ],
-      hints: ['Use multiprocessing.cpu_count() for CPU count', 'os.uname().nodename gives the hostname', 'os.getpid() returns the current process ID'],
-      solution: `import os\nimport multiprocessing\n\ndef detect_resources():\n    return {\n        'cpu_count': multiprocessing.cpu_count(),\n        'hostname': os.uname().nodename,\n        'pid': os.getpid(),\n    }\n\nresources = detect_resources()\nfor key, value in sorted(resources.items()):\n    print(f"{key}: {value}")`,
-    },
-  ];
-  return exercises;
-}
-
-// Lessons API
+// ── Lessons API ──
 
 export async function getLessonAPI(moduleId, lessonId) {
   const data = await apiRequest(`/modules/${moduleId}/lessons/${lessonId}`);
   if (data) return data;
+
+  // Static lesson content from JSON
   if (DEMO_LESSON_CONTENT[lessonId]) return DEMO_LESSON_CONTENT[lessonId];
+
+  // Generate from module data + interactive mapping
   const mod = DEMO_MODULES.find((m) => m.id === Number(moduleId));
   const lesson = mod?.lessons?.find((l) => l.id === Number(lessonId));
   if (lesson) {
-    // Generate rich demo content with interactive components based on module
-    const interactiveContent = DEMO_INTERACTIVE_CONTENT[lesson.slug || ''] || '';
+    const directive = buildInteractiveDirective(lesson.slug);
     return {
       ...lesson,
       module_id: Number(moduleId),
-      content: generateDemoLessonContent(lesson, interactiveContent),
+      content: generateDemoLessonContent(lesson, directive),
       exercises: generateDemoExercises(lesson, lessonId),
     };
   }
   return null;
 }
 
-// Progress API
+// ── Progress API ──
 
 export async function getProgressAPI() {
   const data = await apiRequest('/progress');
@@ -708,7 +270,7 @@ export async function submitExerciseAPI(exerciseId, answer) {
   };
 }
 
-// Dashboard & Learning Path
+// ── Dashboard & Learning Path ──
 
 export async function getDashboardAPI() {
   const data = await apiRequest('/dashboard');
@@ -730,7 +292,6 @@ export async function runCodeAPI(language, code, timeout) {
     body: JSON.stringify({ language, code, timeout }),
   });
   if (data) return data;
-  // Fallback when backend is offline
   return {
     stdout: '(Demo mode — backend offline. Connect the backend to run code.)\n',
     stderr: '',
@@ -742,12 +303,7 @@ export async function runCodeAPI(language, code, timeout) {
 export async function getTemplatesAPI() {
   const data = await apiRequest('/sandbox/templates');
   if (data) return data;
-  return [
-    { id: 'python_hello', language: 'python', title: 'Hello World', description: 'Your first Python program', code: 'print("Hello, HPC World!")\n' },
-    { id: 'bash_sysinfo', language: 'bash', title: 'System Info', description: 'Explore the host system', code: 'echo "=== Kernel ===" && uname -a\necho "\\n=== CPUs ===" && nproc\n' },
-    { id: 'python_numpy', language: 'python', title: 'NumPy Matrix Ops', description: 'Linear algebra basics', code: 'import numpy as np\nA = np.random.rand(3,3)\nprint("Det:", np.linalg.det(A))\n' },
-    { id: 'python_mpi_sim', language: 'python', title: 'MPI Simulation', description: 'Map-reduce across workers', code: 'data = list(range(100))\nworkers = 4\nfor r in range(workers):\n    chunk = data[r*25:(r+1)*25]\n    print(f"Worker {r}: sum={sum(chunk)}")\n' },
-  ];
+  return DEMO_TEMPLATES;
 }
 
 // ── Health ──

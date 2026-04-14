@@ -1,0 +1,31 @@
+{
+  "linux-cli":              { "component": "GuidedLab",                "config": "{\"preset\":\"linux-files\"}" },
+  "shell-scripting":        { "component": "ProcessSchedulerViz",      "config": null },
+  "python-infra":           { "component": "GuidedLab",                "config": "{\"preset\":\"python-hpc\"}" },
+  "networking":             { "component": "NetworkTopologyViewer",     "config": null },
+
+  "cluster-architecture":   { "component": "NetworkTopologyViewer",     "config": null },
+  "slurm-fundamentals":     { "component": "SlurmSimulator",           "config": null },
+  "mpi-programming":        { "component": "MPIVisualizer",            "config": null },
+  "gpu-cuda-fundamentals":  { "component": "GPUMemoryVisualizer",      "config": null },
+
+  "docker-fundamentals":    { "component": "DockerLayerVisualizer",    "config": null },
+  "singularity-apptainer":  { "component": "DockerLayerVisualizer",    "config": null },
+  "kubernetes-core":        { "component": "ProcessSchedulerViz",      "config": null },
+  "kubernetes-gpu":         { "component": "GPUMemoryVisualizer",      "config": null },
+
+  "ml-frameworks":          { "component": "GuidedLab",                "config": "{\"preset\":\"python-hpc\"}" },
+  "distributed-training":   { "component": "MPIVisualizer",            "config": null },
+  "model-serving":          { "component": "DockerLayerVisualizer",    "config": null },
+  "mlops-pipelines":        { "component": "GuidedLab",                "config": "{\"preset\":\"python-hpc\"}" },
+
+  "infrastructure-as-code": { "component": "GuidedLab",                "config": "{\"preset\":\"docker-build\"}" },
+  "gitops-argocd":          { "component": "GuidedLab",                "config": "{\"preset\":\"docker-build\"}" },
+  "observability-stack":    { "component": "NetworkTopologyViewer",     "config": null },
+  "self-service-platforms": { "component": "ProcessSchedulerViz",      "config": null },
+
+  "multi-tenant-platforms": { "component": "SlurmSimulator",           "config": null },
+  "security-compliance":    { "component": "GuidedLab",                "config": "{\"preset\":\"network-debug\"}" },
+  "cost-optimization":      { "component": "GPUMemoryVisualizer",      "config": null },
+  "llm-deployment":         { "component": "GPUMemoryVisualizer",      "config": null }
+}

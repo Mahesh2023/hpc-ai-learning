@@ -1,7 +1,8 @@
-"""Load curriculum from YAML files."""
+"""Load curriculum from JSON files (preferred) or YAML files (fallback)."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -13,9 +14,19 @@ from ..models.schemas import Module, Lesson, Exercise, ModuleSummary
 _modules: dict[str, Module] = {}
 _exercises: dict[str, Exercise] = {}
 
+JSON_DIR = CURRICULUM_DIR / "json"
+
+
+def _load_file(path: Path) -> dict | None:
+    """Load a curriculum file (JSON or YAML)."""
+    with open(path, "r") as f:
+        if path.suffix == ".json":
+            return json.load(f)
+        return yaml.safe_load(f)
+
 
 def load_curriculum() -> None:
-    """Load all YAML files from the curriculum directory."""
+    """Load curriculum data. Prefers JSON from json/ subdir, falls back to YAML."""
     global _modules, _exercises
     _modules.clear()
     _exercises.clear()
@@ -23,9 +34,15 @@ def load_curriculum() -> None:
     if not CURRICULUM_DIR.exists():
         return
 
-    for yaml_file in sorted(CURRICULUM_DIR.glob("*.yaml")):
-        with open(yaml_file, "r") as f:
-            data = yaml.safe_load(f)
+    # Collect files: prefer JSON, fall back to YAML
+    files: list[Path] = []
+    if JSON_DIR.exists():
+        files = sorted(JSON_DIR.glob("*.json"))
+    if not files:
+        files = sorted(CURRICULUM_DIR.glob("*.yaml"))
+
+    for filepath in files:
+        data = _load_file(filepath)
         if not data or not isinstance(data, dict):
             continue
 

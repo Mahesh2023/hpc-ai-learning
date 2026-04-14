@@ -1,0 +1,908 @@
+{
+  "id": "containers-orchestration",
+  "title": "Containers & Orchestration",
+  "description": "Learn to package, deploy, and orchestrate containerized HPC and AI workloads using Docker, Singularity/Apptainer, Kubernetes, and Helm across on-premises and cloud environments.",
+  "level": "intermediate",
+  "order": 3,
+  "estimated_hours": 14,
+  "prerequisites": [
+    "hpc-fundamentals"
+  ],
+  "skills": [
+    "Containers",
+    "Kubernetes"
+  ],
+  "lessons": [
+    {
+      "id": "docker-fundamentals",
+      "title": "Docker Fundamentals",
+      "order": 1,
+      "objectives": [
+        "Understand container internals: namespaces, cgroups, and overlay filesystems",
+        "Write efficient, production-quality Dockerfiles with all major instructions",
+        "Build optimized ML/HPC images using multi-stage builds",
+        "Manage multi-service stacks with Docker Compose",
+        "Apply security best practices: non-root users, .dockerignore, image scanning"
+      ],
+      "content_md": "# Docker Fundamentals\n\n## 1. What Is a Container?\n\nA container is **not** a lightweight VM. It is a regular Linux process\nwhose view of the system is restricted by three kernel features:\n\n| Kernel Feature       | Purpose                                       |\n|----------------------|-----------------------------------------------|\n| **Namespaces**       | Isolate what a process can *see*               |\n| **Cgroups**          | Limit what a process can *use*                 |\n| **Overlay FS**       | Provide a layered, copy-on-write filesystem    |\n\n### 1.1 Linux Namespaces\n\nNamespaces partition kernel resources so each set of processes has its\nown isolated view. Docker uses six namespaces:\n\n| Namespace | Flag            | Isolates                          |\n|-----------|-----------------|-----------------------------------|\n| PID       | `CLONE_NEWPID`  | Process IDs — PID 1 inside        |\n| NET       | `CLONE_NEWNET`  | Network interfaces, routes, ports |\n| MNT       | `CLONE_NEWNS`   | Mount points (filesystem tree)    |\n| UTS       | `CLONE_NEWUTS`  | Hostname and domain name          |\n| IPC       | `CLONE_NEWIPC`  | Shared memory, semaphores         |\n| USER      | `CLONE_NEWUSER` | UID/GID mappings                  |\n\nYou can verify namespace isolation from the host:\n\n```bash\n# Run a container and inspect its namespaces\ndocker run -d --name demo alpine sleep 3600\nPID=$(docker inspect --format '{{.State.Pid}}' demo)\nls -la /proc/$PID/ns/\n# Each entry is a symlink to a unique namespace inode\n```\n\n### 1.2 Control Groups (cgroups)\n\nCgroups enforce resource limits on CPU, memory, I/O, and devices.\nWhen you run `docker run --memory=4g --cpus=2`, Docker creates a\ncgroup with those constraints:\n\n```bash\n# Inside the container\ncat /sys/fs/cgroup/memory/memory.limit_in_bytes   # cgroup v1\ncat /sys/fs/cgroup/memory.max                      # cgroup v2\n```\n\nFor GPU containers, the NVIDIA runtime adds device cgroup rules that\nwhitelist `/dev/nvidia*` device nodes.\n\n### 1.3 Overlay Filesystem and Image Layers\n\nDocker images use a **union filesystem** (OverlayFS) that stacks\nread-only layers on top of each other, with a thin writable layer\nadded when a container starts:\n\n```\n┌─────────────────────────────────┐\n│   Container layer (R/W)         │  ← writable; lost when removed\n├─────────────────────────────────┤\n│ Layer 5: CMD [\"python\",\"app.py\"]│  ← 0 B   (metadata only)\n│ Layer 4: COPY . /app            │  ← 15 MB  (app source code)\n│ Layer 3: RUN pip install -r ... │  ← 350 MB (Python packages)\n│ Layer 2: RUN apt-get install ...│  ← 120 MB (system packages)\n│ Layer 1: FROM ubuntu:22.04      │  ← 77 MB  (base OS)\n└─────────────────────────────────┘\n            Read-Only Layers\n```\n\nEach layer stores only the **diff** from the layer below. This\nenables:\n- **Sharing**: multiple images sharing the same base layer save disk\n- **Caching**: unchanged layers are reused during builds\n- **Fast startup**: no full filesystem copy required\n\n:::interactive{component=\"DockerLayerVisualizer\"}\n\n## 2. Dockerfile Deep Dive\n\nA Dockerfile is a declarative recipe for building images. Every\ninstruction creates a layer (or metadata entry).\n\n### 2.1 Core Instructions Reference\n\n```dockerfile\n# Base image — always start here\nFROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS builder\n\n# Set environment variables (available at build AND runtime)\nENV DEBIAN_FRONTEND=noninteractive \\\n    PYTHONDONTWRITEBYTECODE=1 \\\n    PYTHONUNBUFFERED=1 \\\n    CUDA_HOME=/usr/local/cuda\n\n# Set the working directory\nWORKDIR /app\n\n# Install system packages — combine to reduce layers\nRUN apt-get update && apt-get install -y --no-install-recommends \\\n        build-essential \\\n        cmake \\\n        git \\\n        libopenmpi-dev \\\n    && rm -rf /var/lib/apt/lists/*\n\n# Copy dependency manifest first (cache-friendly ordering)\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\n\n# COPY vs ADD:\n#   COPY — simple file/directory copy (preferred)\n#   ADD  — also handles URLs and tar auto-extraction\nCOPY src/ ./src/\nCOPY configs/ ./configs/\n\n# Expose a port (documentation; does not publish)\nEXPOSE 8080\n\n# CMD — default command (can be overridden at runtime)\nCMD [\"python\", \"src/serve.py\"]\n\n# ENTRYPOINT — fixed executable (CMD becomes arguments)\n# ENTRYPOINT [\"python\", \"src/serve.py\"]\n```\n\n### 2.2 ENTRYPOINT vs CMD\n\n| Dockerfile             | `docker run img`       | `docker run img bash`    |\n|------------------------|------------------------|--------------------------|\n| `CMD [\"python\"]`       | `python`               | `bash`                   |\n| `ENTRYPOINT [\"python\"]`| `python`               | `python bash`            |\n| Both combined          | `python app.py`        | `python bash`            |\n\nBest practice: use `ENTRYPOINT` for the executable and `CMD` for\ndefault arguments:\n\n```dockerfile\nENTRYPOINT [\"torchrun\", \"--nproc_per_node=auto\"]\nCMD [\"train.py\", \"--epochs=10\"]\n```\n\n## 3. Multi-Stage Builds\n\nML/HPC images often balloon to 10+ GB because build tools, headers,\nand source code remain in the final image. Multi-stage builds solve\nthis by using separate stages for building and running:\n\n```dockerfile\n# ---- Stage 1: Builder ----\nFROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS builder\n\nRUN apt-get update && apt-get install -y --no-install-recommends \\\n        build-essential cmake git && \\\n    rm -rf /var/lib/apt/lists/*\n\nWORKDIR /build\nCOPY . .\nRUN mkdir -p output && cmake -B output -DCMAKE_BUILD_TYPE=Release . \\\n    && cmake --build output --parallel $(nproc)\n\n# ---- Stage 2: Runtime ----\nFROM nvidia/cuda:12.2.0-runtime-ubuntu22.04\n\n# Copy ONLY the compiled binary from the builder\nCOPY --from=builder /build/output/gpu_solver /usr/local/bin/gpu_solver\n\n# Create a non-root user\nRUN useradd --create-home appuser\nUSER appuser\n\nENTRYPOINT [\"gpu_solver\"]\n```\n\n| Metric       | Single stage | Multi-stage |\n|--------------|-------------|-------------|\n| Image size   | 8.2 GB      | 1.8 GB      |\n| Attack surface | Large     | Minimal     |\n| Build tools  | Included    | Excluded    |\n\n## 4. Building ML/HPC Images\n\n### 4.1 CUDA Base Images\n\nNVIDIA provides official base images on NGC:\n\n| Tag Pattern                          | Contents                         |\n|--------------------------------------|----------------------------------|\n| `nvidia/cuda:12.2.0-base-ubuntu22.04`   | Driver libs only (~120 MB)   |\n| `nvidia/cuda:12.2.0-runtime-ubuntu22.04` | + CUDA runtime (~1.5 GB)    |\n| `nvidia/cuda:12.2.0-devel-ubuntu22.04`   | + headers, nvcc (~3.5 GB)   |\n\nRule of thumb: use `devel` for building, `runtime` for deployment.\n\n### 4.2 Conda Environments in Docker\n\n```dockerfile\nFROM continuumio/miniconda3:24.1.2-0\n\nCOPY environment.yml .\nRUN conda env create -f environment.yml && conda clean -afy\nSHELL [\"conda\", \"run\", \"-n\", \"myenv\", \"/bin/bash\", \"-c\"]\n\nCOPY src/ ./src/\nENTRYPOINT [\"conda\", \"run\", \"--no-capture-output\", \"-n\", \"myenv\", \\\n             \"python\", \"src/train.py\"]\n```\n\n### 4.3 MPI in Docker\n\n```dockerfile\nFROM nvidia/cuda:12.2.0-devel-ubuntu22.04\n\n# Install OpenMPI with CUDA-awareness\nRUN apt-get update && apt-get install -y --no-install-recommends \\\n        libopenmpi-dev openmpi-bin openssh-client && \\\n    rm -rf /var/lib/apt/lists/*\n\nENV OMPI_MCA_btl_tcp_if_include=eth0\nENV OMPI_ALLOW_RUN_AS_ROOT=1\nENV OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1\n\nCOPY . /app\nWORKDIR /app\nRUN make mpi_solver\n\nENTRYPOINT [\"mpirun\"]\nCMD [\"--bind-to\", \"none\", \"-np\", \"4\", \"./mpi_solver\"]\n```\n\n## 5. Docker Compose for Multi-Service Stacks\n\nReal ML workflows involve multiple services — a training API, an\nexperiment tracker, a database, a monitoring stack:\n\n```yaml\nversion: \"3.9\"\nservices:\n  jupyter:\n    image: quay.io/jupyter/pytorch-notebook:cuda12-latest\n    ports: [\"8888:8888\"]\n    volumes:\n      - ./notebooks:/home/jovyan/work\n      - training-data:/data:ro\n    deploy:\n      resources:\n        reservations:\n          devices:\n            - driver: nvidia\n              count: 1\n              capabilities: [gpu]\n\n  mlflow:\n    image: ghcr.io/mlflow/mlflow:v2.14.0\n    ports: [\"5000:5000\"]\n    environment:\n      BACKEND_STORE_URI: postgresql://mlflow:secret@postgres:5432/mlflow\n      DEFAULT_ARTIFACT_ROOT: /mlflow-artifacts\n    volumes:\n      - mlflow-artifacts:/mlflow-artifacts\n    depends_on: [postgres]\n\n  postgres:\n    image: postgres:16-alpine\n    environment:\n      POSTGRES_USER: mlflow\n      POSTGRES_PASSWORD: secret\n      POSTGRES_DB: mlflow\n    volumes:\n      - pgdata:/var/lib/postgresql/data\n\nvolumes:\n  training-data:\n  mlflow-artifacts:\n  pgdata:\n```\n\nStart the stack:\n\n```bash\ndocker compose up -d          # Start all services\ndocker compose ps              # Check status\ndocker compose logs -f mlflow  # Stream logs\ndocker compose down -v         # Stop and remove volumes\n```\n\n## 6. Best Practices\n\n### 6.1 Minimize Layers and Image Size\n\n```dockerfile\n# BAD — three layers, apt cache left behind\nRUN apt-get update\nRUN apt-get install -y python3\nRUN rm -rf /var/lib/apt/lists/*\n\n# GOOD — one layer, apt cache cleaned in same layer\nRUN apt-get update && \\\n    apt-get install -y --no-install-recommends python3 && \\\n    rm -rf /var/lib/apt/lists/*\n```\n\n### 6.2 .dockerignore\n\nPrevent build context bloat (large datasets, .git, virtualenvs):\n\n```\n.git\n__pycache__\n*.pyc\n.venv\ndata/\n*.tar.gz\ncheckpoints/\nwandb/\n.env\n```\n\n### 6.3 Non-Root Users\n\n```dockerfile\nRUN groupadd -r appgroup && useradd -r -g appgroup -m appuser\nUSER appuser\nWORKDIR /home/appuser/app\n```\n\n### 6.4 Security Scanning\n\n```bash\n# Scan with Trivy\ntrivy image myregistry/ml-api:latest\n\n# Scan with Docker Scout\ndocker scout cves myregistry/ml-api:latest\n```\n\n### 6.5 Build Cache Best Practices\n\nOrder your Dockerfile from least-changing to most-changing:\n\n1. `FROM` (base image — rarely changes)\n2. System packages (`apt-get` — changes occasionally)\n3. Dependency manifest (`requirements.txt` — changes sometimes)\n4. Application source (`COPY . .` — changes every build)\n",
+      "exercises": [
+        {
+          "id": "docker-fund-ex1",
+          "title": "Write a PyTorch CUDA Dockerfile",
+          "description": "Write a Dockerfile that builds a PyTorch training environment. Start from\nthe nvidia/cuda:12.2.0-runtime-ubuntu22.04 base image, install Python 3.11,\npip install PyTorch with CUDA support and torchvision from requirements.txt,\ncopy the application source, create a non-root user 'trainer', and set the\nentrypoint to run train.py.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# Dockerfile for PyTorch CUDA Training Environment\n# TODO: Choose the correct NVIDIA CUDA base image\n\n# TODO: Set environment variables to prevent interactive prompts\n#       and enable unbuffered Python output\n\n# TODO: Install Python 3.11 and pip (combine into a single RUN layer\n#       and clean up apt cache)\n\n# TODO: Set working directory to /app\n\n# TODO: Copy requirements.txt first, then install dependencies\n#       (for optimal layer caching)\n\n# TODO: Copy the application source code\n\n# TODO: Create a non-root user called 'trainer' and switch to it\n\n# TODO: Set the entrypoint to run train.py with python\n",
+          "test_cases": [
+            {
+              "input": "Check base image",
+              "expected_output": "FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04"
+            },
+            {
+              "input": "Check non-root user",
+              "expected_output": "USER trainer"
+            },
+            {
+              "input": "Check COPY ordering",
+              "expected_output": "COPY requirements.txt"
+            },
+            {
+              "input": "Check entrypoint",
+              "expected_output": "ENTRYPOINT"
+            }
+          ],
+          "hints": [
+            "Use FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 as the base.",
+            "Set DEBIAN_FRONTEND=noninteractive and PYTHONUNBUFFERED=1.",
+            "Always COPY requirements.txt before COPY . for cache efficiency.",
+            "Use useradd --create-home trainer to create the user."
+          ],
+          "solution": "```dockerfile\nFROM nvidia/cuda:12.2.0-runtime-ubuntu22.04\n\nENV DEBIAN_FRONTEND=noninteractive \\\n    PYTHONUNBUFFERED=1 \\\n    PYTHONDONTWRITEBYTECODE=1\n\nRUN apt-get update && apt-get install -y --no-install-recommends \\\n        python3.11 python3-pip python3.11-venv && \\\n    rm -rf /var/lib/apt/lists/* && \\\n    ln -sf /usr/bin/python3.11 /usr/bin/python\n\nWORKDIR /app\n\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\n\nCOPY . .\n\nRUN useradd --create-home trainer\nUSER trainer\n\nENTRYPOINT [\"python\", \"train.py\"]\n```\n"
+        },
+        {
+          "id": "docker-fund-ex2",
+          "title": "Optimize Image Size with Multi-Stage Build",
+          "description": "The following Dockerfile produces a 9 GB image because it includes all\nbuild tools in the final image. Rewrite it as a multi-stage build where\nStage 1 (builder) compiles the CUDA C++ application using the devel image,\nand Stage 2 uses the runtime image with only the compiled binary. The source\nis in /src and the Makefile produces binary 'gpu_app'.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# CURRENT (unoptimized) — produces ~9 GB image\n# FROM nvidia/cuda:12.2.0-devel-ubuntu22.04\n# RUN apt-get update && apt-get install -y build-essential cmake\n# COPY . /src\n# WORKDIR /src\n# RUN make gpu_app\n# ENTRYPOINT [\"./gpu_app\"]\n\n# TODO: Rewrite as a multi-stage build\n# Stage 1: \"builder\" — use the devel image, install build-essential,\n#   copy source, compile with make\n\n# Stage 2: runtime — use the runtime image, copy ONLY the compiled\n#   binary from the builder stage, set entrypoint\n",
+          "test_cases": [
+            {
+              "input": "Check builder stage",
+              "expected_output": "FROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS builder"
+            },
+            {
+              "input": "Check runtime stage",
+              "expected_output": "FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04"
+            },
+            {
+              "input": "Check COPY from builder",
+              "expected_output": "COPY --from=builder"
+            },
+            {
+              "input": "Check entrypoint",
+              "expected_output": "ENTRYPOINT"
+            }
+          ],
+          "hints": [
+            "Name the first stage with AS builder.",
+            "Use COPY --from=builder to pull the binary into the runtime stage.",
+            "The runtime stage should NOT have build-essential installed."
+          ],
+          "solution": "```dockerfile\n# Stage 1: Build\nFROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS builder\nRUN apt-get update && apt-get install -y --no-install-recommends \\\n        build-essential cmake && \\\n    rm -rf /var/lib/apt/lists/*\nCOPY . /src\nWORKDIR /src\nRUN make -j$(nproc) gpu_app\n\n# Stage 2: Runtime\nFROM nvidia/cuda:12.2.0-runtime-ubuntu22.04\nCOPY --from=builder /src/gpu_app /usr/local/bin/gpu_app\nRUN useradd --create-home appuser\nUSER appuser\nENTRYPOINT [\"gpu_app\"]\n```\nThis reduces the image from ~9 GB to ~1.8 GB by excluding\ncompilers, headers, source code, and object files.\n"
+        },
+        {
+          "id": "docker-fund-ex3",
+          "title": "Docker Compose GPU ML Stack",
+          "description": "Write a docker-compose.yaml that defines three services: (1) a Jupyter\nnotebook server with GPU access using quay.io/jupyter/pytorch-notebook:cuda12-latest,\nexposing port 8888 and mounting ./notebooks; (2) an MLflow tracking server\nusing ghcr.io/mlflow/mlflow:v2.14.0 on port 5000; (3) a Redis cache on port\n6379. All services should be on a custom network called 'ml-net'. Jupyter\nshould reserve 1 GPU.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# docker-compose.yaml for ML Development Stack\nversion: \"3.9\"\n\nservices:\n  # TODO: Define Jupyter service\n  #   - image: quay.io/jupyter/pytorch-notebook:cuda12-latest\n  #   - port 8888\n  #   - mount ./notebooks to /home/jovyan/work\n  #   - reserve 1 GPU using deploy.resources.reservations.devices\n  #   - connect to ml-net network\n\n  # TODO: Define MLflow service\n  #   - image: ghcr.io/mlflow/mlflow:v2.14.0\n  #   - port 5000\n  #   - connect to ml-net network\n\n  # TODO: Define Redis service\n  #   - image: redis:7-alpine\n  #   - port 6379\n  #   - connect to ml-net network\n\n# TODO: Define the custom network 'ml-net'\nnetworks:\n",
+          "test_cases": [
+            {
+              "input": "Check Jupyter service exists",
+              "expected_output": "jupyter:"
+            },
+            {
+              "input": "Check GPU reservation",
+              "expected_output": "capabilities: [gpu]"
+            },
+            {
+              "input": "Check MLflow image",
+              "expected_output": "ghcr.io/mlflow/mlflow:v2.14.0"
+            },
+            {
+              "input": "Check network definition",
+              "expected_output": "ml-net:"
+            }
+          ],
+          "hints": [
+            "GPU access requires deploy.resources.reservations.devices with driver: nvidia.",
+            "Use a bind mount (./notebooks:/home/jovyan/work) for the notebooks.",
+            "Define ml-net under the top-level 'networks' key with driver: bridge."
+          ],
+          "solution": "```yaml\nversion: \"3.9\"\nservices:\n  jupyter:\n    image: quay.io/jupyter/pytorch-notebook:cuda12-latest\n    ports:\n      - \"8888:8888\"\n    volumes:\n      - ./notebooks:/home/jovyan/work\n    networks:\n      - ml-net\n    deploy:\n      resources:\n        reservations:\n          devices:\n            - driver: nvidia\n              count: 1\n              capabilities: [gpu]\n\n  mlflow:\n    image: ghcr.io/mlflow/mlflow:v2.14.0\n    ports:\n      - \"5000:5000\"\n    networks:\n      - ml-net\n\n  redis:\n    image: redis:7-alpine\n    ports:\n      - \"6379:6379\"\n    networks:\n      - ml-net\n\nnetworks:\n  ml-net:\n    driver: bridge\n```\n"
+        },
+        {
+          "id": "docker-fund-ex4",
+          "title": "Write a .dockerignore File",
+          "description": "Write a comprehensive .dockerignore file for an ML project that prevents\nlarge datasets, model checkpoints, Python cache files, virtual environments,\nGit history, Weights & Biases logs, and environment secrets from being\nincluded in the Docker build context.\n",
+          "exercise_type": "coding",
+          "difficulty": 2,
+          "starter_code": "# .dockerignore for ML project\n# TODO: Exclude version control directories\n\n# TODO: Exclude Python cache and compiled files\n\n# TODO: Exclude virtual environments\n\n# TODO: Exclude large data directories\n\n# TODO: Exclude model checkpoints and logs\n\n# TODO: Exclude environment/secret files\n\n# TODO: Exclude IDE configuration\n",
+          "test_cases": [
+            {
+              "input": "Check git exclusion",
+              "expected_output": ".git"
+            },
+            {
+              "input": "Check pycache exclusion",
+              "expected_output": "__pycache__"
+            },
+            {
+              "input": "Check data exclusion",
+              "expected_output": "data/"
+            },
+            {
+              "input": "Check env file exclusion",
+              "expected_output": ".env"
+            }
+          ],
+          "hints": [
+            "Include .git, __pycache__, *.pyc, .venv, data/, checkpoints/.",
+            "Don't forget .env files which may contain secrets.",
+            "Exclude wandb/ and mlruns/ experiment tracking directories."
+          ],
+          "solution": "```\n# Version control\n.git\n.gitignore\n\n# Python\n__pycache__\n*.pyc\n*.pyo\n*.egg-info\n.venv\nvenv/\nenv/\n\n# Data and models\ndata/\ndatasets/\ncheckpoints/\n*.tar.gz\n*.zip\n*.h5\n*.ckpt\n*.pt\n*.bin\n\n# Experiment tracking\nwandb/\nmlruns/\nlightning_logs/\n\n# Secrets and environment\n.env\n.env.*\n*.pem\n*.key\n\n# IDE and OS\n.vscode/\n.idea/\n.DS_Store\nThumbs.db\n\n# Docker\nDockerfile\ndocker-compose*.yaml\n.dockerignore\n```\n"
+        },
+        {
+          "id": "docker-fund-ex5",
+          "title": "Conda Environment Dockerfile",
+          "description": "Write a Dockerfile that creates a reproducible ML environment using\nMiniconda. Start from continuumio/miniconda3:24.1.2-0, copy an\nenvironment.yml file, create the conda environment named 'hpc-ml',\nclean the conda cache, and set the entrypoint to run scripts within\nthat environment using 'conda run'.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# Dockerfile for Conda-based ML Environment\n# TODO: Start from the miniconda3 base image\n\n# TODO: Set working directory\n\n# TODO: Copy conda environment file and create the environment\n#       (clean conda cache to reduce image size)\n\n# TODO: Set the default shell to run within the conda environment\n\n# TODO: Copy application source\n\n# TODO: Set entrypoint using conda run\n",
+          "test_cases": [
+            {
+              "input": "Check base image",
+              "expected_output": "FROM continuumio/miniconda3"
+            },
+            {
+              "input": "Check environment creation",
+              "expected_output": "conda env create"
+            },
+            {
+              "input": "Check conda clean",
+              "expected_output": "conda clean"
+            },
+            {
+              "input": "Check entrypoint",
+              "expected_output": "conda run"
+            }
+          ],
+          "hints": [
+            "Use 'conda env create -f environment.yml' to create from the YAML.",
+            "Run 'conda clean -afy' to remove downloaded packages and caches.",
+            "The ENTRYPOINT should use conda run with --no-capture-output."
+          ],
+          "solution": "```dockerfile\nFROM continuumio/miniconda3:24.1.2-0\n\nWORKDIR /app\n\nCOPY environment.yml .\nRUN conda env create -f environment.yml && \\\n    conda clean -afy\n\nSHELL [\"conda\", \"run\", \"-n\", \"hpc-ml\", \"/bin/bash\", \"-c\"]\n\nCOPY . .\n\nENTRYPOINT [\"conda\", \"run\", \"--no-capture-output\", \"-n\", \"hpc-ml\", \\\n             \"python\"]\nCMD [\"train.py\"]\n```\n"
+        }
+      ]
+    },
+    {
+      "id": "singularity-apptainer",
+      "title": "Container Runtimes for HPC — Singularity/Apptainer",
+      "order": 2,
+      "objectives": [
+        "Explain why Docker is unsuitable for shared HPC clusters and how Singularity solves this",
+        "Understand the SIF image format and how it differs from Docker layers",
+        "Write definition files (.def) and convert Docker images to SIF",
+        "Run containers with exec, run, shell, and instance commands",
+        "Configure bind mounts, GPU passthrough, and MPI integration"
+      ],
+      "content_md": "# Container Runtimes for HPC — Singularity / Apptainer\n\n## 1. Why Singularity for HPC?\n\nDocker was designed for microservices: it runs a privileged daemon\nas root, isolates containers in separate network namespaces, and\nmanages its own storage backend. **None of these properties are\nacceptable on a shared HPC cluster:**\n\n| Concern                | Docker                     | Apptainer                    |\n|------------------------|----------------------------|------------------------------|\n| Privilege model        | Root daemon required       | Runs as calling user         |\n| Privilege escalation   | Possible (docker group)    | Impossible by design         |\n| Network model          | Isolated per container     | Shares host network          |\n| Filesystem integration | Volume mounts only         | Auto-binds $HOME, /tmp, etc. |\n| MPI support            | Complex, needs host net    | Native hybrid model          |\n| GPU access             | `--gpus` flag + runtime    | `--nv` / `--rocm` flag       |\n| Image format           | Layered OCI (requires daemon) | Single SIF file           |\n| Scheduler integration  | Requires wrapper scripts   | Direct `srun apptainer ...`  |\n| Reproducibility        | Mutable layers             | Immutable, cryptographically verifiable |\n\nThe critical insight: on an HPC cluster, an unprivileged user should\nbe able to pull or build a container and run it under their own UID\nwithout any system service or elevated permissions.\n\n### 1.1 The Security Model\n\nWhen you run `apptainer exec container.sif command`:\n- The process runs as **your UID/GID** on the host\n- You have the **same permissions** inside the container as outside\n- You **cannot** become root inside the container (unless you built\n  with `--fakeroot`)\n- The SIF file is **read-only** — you cannot modify the image at runtime\n\nThis means cluster admins can allow Apptainer without any risk of\nusers gaining elevated access.\n\n## 2. SIF Format vs Docker Layers\n\n| Aspect           | Docker OCI Image               | Apptainer SIF              |\n|------------------|---------------------------------|----------------------------|\n| Structure        | Set of tar.gz layer archives    | Single SquashFS file       |\n| Mutability       | Layers can be modified          | Immutable after build      |\n| Portability      | Requires registry or daemon     | Copy/scp the .sif file     |\n| Verification     | Content-addressable digests     | Cryptographic signatures (PGP) |\n| Size on disk     | Sum of all layers               | Compressed single file     |\n| Startup overhead | Unpack layers to overlay        | Direct mount (near-zero)   |\n\nA `.sif` file is a **Singularity Image Format** container — a\nSquashFS filesystem wrapped with metadata. You can:\n\n```bash\n# Inspect the image\napptainer inspect container.sif\napptainer inspect --deffile container.sif   # View the definition\n\n# Verify a signed image\napptainer verify container.sif\n\n# List files in the image\napptainer exec container.sif ls /usr/local/bin/\n```\n\n## 3. Building Images\n\n### 3.1 From Definition Files (.def)\n\nA definition file is the Singularity equivalent of a Dockerfile:\n\n```singularity\nBootstrap: docker\nFrom: nvcr.io/nvidia/pytorch:24.01-py3\n\n%labels\n    Author HPC-AI Team\n    Version 1.0\n    Description PyTorch HPC training environment\n\n%post\n    # Runs as root during build\n    apt-get update && apt-get install -y --no-install-recommends \\\n        ibverbs-utils \\\n        libibverbs-dev \\\n        numactl \\\n        && rm -rf /var/lib/apt/lists/*\n\n    pip install --no-cache-dir \\\n        transformers==4.40.0 \\\n        datasets==2.19.0 \\\n        accelerate==0.30.0 \\\n        deepspeed==0.14.0\n\n%environment\n    # Set at runtime\n    export OMP_NUM_THREADS=1\n    export NCCL_DEBUG=INFO\n    export CUDA_DEVICE_ORDER=PCI_BUS_ID\n\n%runscript\n    # Executed when 'apptainer run container.sif' is called\n    echo \"PyTorch $(python -c 'import torch; print(torch.__version__)')\"\n    echo \"CUDA available: $(python -c 'import torch; print(torch.cuda.is_available())')\"\n    exec python \"$@\"\n\n%test\n    # Run during 'apptainer build --run-tests'\n    python -c \"import torch; assert torch.cuda.is_available()\"\n\n%help\n    PyTorch HPC training container with NCCL, DeepSpeed, and\n    InfiniBand support. Usage:\n        apptainer run --nv container.sif train.py --epochs 10\n```\n\nBuild it:\n\n```bash\n# Build with fakeroot (no actual root required)\napptainer build --fakeroot pytorch-hpc.sif pytorch-hpc.def\n\n# Build from a remote definition (sandbox for debugging)\napptainer build --sandbox pytorch-sandbox/ pytorch-hpc.def\napptainer shell --writable pytorch-sandbox/   # Interactive debugging\napptainer build pytorch-hpc.sif pytorch-sandbox/  # Finalize\n```\n\n### 3.2 Converting from Docker\n\n```bash\n# Pull directly from Docker Hub or NGC\napptainer pull pytorch.sif docker://nvcr.io/nvidia/pytorch:24.01-py3\n\n# Pull from a private registry\napptainer pull --docker-login private.sif docker://myregistry.io/ml/train:v2\n\n# Convert a local Docker image\ndocker save my-local-image:latest -o image.tar\napptainer build converted.sif docker-archive://image.tar\n```\n\n### 3.3 Multi-Stage Equivalent\n\nSingularity doesn't have native multi-stage builds, but you can\nchain builds:\n\n```bash\n# Stage 1: build in a sandbox\napptainer build --sandbox build-env/ builder.def\napptainer exec build-env/ make -C /src gpu_solver\n\n# Stage 2: copy binary into minimal runtime\napptainer build runtime.sif runtime.def  # runtime.def uses %files from host\n```\n\n## 4. Running Containers\n\n### 4.1 Core Run Modes\n\n```bash\n# exec — run a specific command\napptainer exec container.sif python train.py --epochs 10\n\n# run — execute the %runscript\napptainer run container.sif --epochs 10\n\n# shell — interactive shell inside the container\napptainer shell container.sif\n\n# instance — start a background service\napptainer instance start container.sif myservice\napptainer exec instance://myservice curl http://localhost:8080\napptainer instance stop myservice\n```\n\n### 4.2 Environment Variables\n\n```bash\n# Pass env vars with --env\napptainer exec --env BATCH_SIZE=64 --env LR=0.001 \\\n    container.sif python train.py\n\n# Pass a file of env vars\napptainer exec --env-file ./training.env container.sif python train.py\n\n# Container's %environment vars are always set\n# Host env vars are inherited by default (use --cleanenv to prevent)\napptainer exec --cleanenv --env CUDA_VISIBLE_DEVICES=0,1 \\\n    container.sif nvidia-smi\n```\n\n## 5. Bind Mounts for HPC Filesystems\n\nBy default, Apptainer automatically binds `$HOME`, `/tmp`, `/proc`,\n`/sys`, and `/dev`. For HPC data directories, you need explicit binds:\n\n```bash\napptainer exec \\\n    --bind /scratch/datasets:/data:ro \\\n    --bind /scratch/$USER/results:/results \\\n    --bind /lustre/shared/models:/models:ro \\\n    --bind /tmp/$SLURM_JOB_ID:/tmp \\\n    pytorch-hpc.sif python train.py \\\n        --data-dir /data \\\n        --model-dir /models \\\n        --output-dir /results\n```\n\n**Mount syntax:** `host_path:container_path[:ro]`\n\n| Flag       | Effect                                           |\n|------------|--------------------------------------------------|\n| `:ro`      | Read-only mount (protects shared datasets)       |\n| (default)  | Read-write mount                                 |\n| `--no-home`| Do not mount $HOME (for reproducibility)         |\n\n### 5.1 Overlay for Writable Layers\n\nIf you need to write to paths inside the container image:\n\n```bash\n# Create a writable overlay\napptainer overlay create --size 1024 overlay.img  # 1 GB\n\napptainer exec --overlay overlay.img container.sif \\\n    pip install new-package  # Writes go to overlay\n```\n\n## 6. GPU Support\n\n### 6.1 NVIDIA GPUs (--nv)\n\n```bash\napptainer exec --nv pytorch-hpc.sif python -c \"\nimport torch\nprint(f'GPU count: {torch.cuda.device_count()}')\nfor i in range(torch.cuda.device_count()):\n    print(f'  GPU {i}: {torch.cuda.get_device_name(i)}')\n    print(f'    Memory: {torch.cuda.get_device_properties(i).total_mem / 1e9:.1f} GB')\n\"\n```\n\nThe `--nv` flag does three things:\n1. Bind-mounts `/dev/nvidia*` device files\n2. Bind-mounts host NVIDIA driver libraries (`libcuda.so`, etc.)\n3. Sets `LD_LIBRARY_PATH` to find the driver libraries\n\n**Important**: The CUDA toolkit version in your container must be\ncompatible with the host driver version. Use `nvidia-smi` on the\nhost to check the maximum supported CUDA version.\n\n### 6.2 AMD GPUs (--rocm)\n\n```bash\napptainer exec --rocm pytorch-rocm.sif python -c \"\nimport torch; print(torch.cuda.is_available())  # ROCm uses same API\n\"\n```\n\n## 7. MPI Integration\n\n### 7.1 Hybrid Approach (Recommended)\n\nThe host MPI launcher invokes Apptainer, which calls the\napplication's MPI inside the container:\n\n```bash\nsrun --mpi=pmix apptainer exec --nv \\\n    --bind /scratch/data:/data \\\n    --bind /opt/slurm:/opt/slurm \\\n    mpi-app.sif /app/solver --input /data/mesh.h5\n```\n\nRequirements:\n- Host MPI and container MPI must be **ABI-compatible**\n- Same major version of OpenMPI or MPICH\n- PMI/PMIx libraries must match\n\n### 7.2 Bind Approach\n\nBind-mount the host MPI into the container:\n\n```bash\napptainer exec \\\n    --bind /opt/openmpi:/opt/openmpi \\\n    --bind /opt/slurm:/opt/slurm \\\n    container.sif /app/solver\n```\n\nThis avoids version mismatch issues but couples the container to\nthe specific cluster's MPI installation.\n\n### 7.3 Complete Multi-Node SLURM Job\n\n```bash\n#!/bin/bash\n#SBATCH --job-name=distributed-train\n#SBATCH --partition=gpu\n#SBATCH --nodes=4\n#SBATCH --ntasks-per-node=1\n#SBATCH --gres=gpu:a100:8\n#SBATCH --cpus-per-task=64\n#SBATCH --mem=512G\n#SBATCH --time=48:00:00\n\nmodule load apptainer\n\nexport MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n1)\nexport MASTER_PORT=29500\n\nsrun apptainer exec --nv \\\n    --bind /scratch/datasets:/data:ro \\\n    --bind /scratch/$USER/checkpoints:/checkpoints \\\n    /shared/containers/pytorch-hpc.sif \\\n    torchrun \\\n        --nnodes=$SLURM_NNODES \\\n        --nproc_per_node=8 \\\n        --rdzv_id=$SLURM_JOB_ID \\\n        --rdzv_backend=c10d \\\n        --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \\\n        train.py \\\n            --data /data \\\n            --output /checkpoints \\\n            --bf16 --batch-size 64\n```\n",
+      "exercises": [
+        {
+          "id": "sing-ex1",
+          "title": "Write an Apptainer Definition File",
+          "description": "Write a complete Apptainer definition file (.def) that bootstraps from\nthe NVIDIA PyTorch NGC container (nvcr.io/nvidia/pytorch:24.01-py3),\ninstalls transformers, datasets, and deepspeed via pip, sets\nOMP_NUM_THREADS=1 and NCCL_DEBUG=INFO as environment variables, includes\na runscript that runs Python with any passed arguments, and has a %test\nsection that verifies torch can be imported.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# pytorch-hpc.def — Apptainer Definition File\n# TODO: Set the Bootstrap and From directives for Docker-based build\n\n# TODO: Add %labels section with author and description\n\n# TODO: Add %post section to install Python packages\n#       (transformers, datasets, deepspeed)\n\n# TODO: Add %environment section to set runtime env vars\n#       (OMP_NUM_THREADS=1, NCCL_DEBUG=INFO)\n\n# TODO: Add %runscript section to execute python with arguments\n\n# TODO: Add %test section to verify torch import\n",
+          "test_cases": [
+            {
+              "input": "Check bootstrap",
+              "expected_output": "Bootstrap: docker"
+            },
+            {
+              "input": "Check base image",
+              "expected_output": "nvcr.io/nvidia/pytorch:24.01-py3"
+            },
+            {
+              "input": "Check pip install",
+              "expected_output": "pip install"
+            },
+            {
+              "input": "Check OMP setting",
+              "expected_output": "OMP_NUM_THREADS"
+            },
+            {
+              "input": "Check runscript",
+              "expected_output": "%runscript"
+            }
+          ],
+          "hints": [
+            "Start with 'Bootstrap: docker' and 'From: nvcr.io/nvidia/pytorch:24.01-py3'.",
+            "The %post section runs commands as root during build time.",
+            "The %environment section sets variables available at run time.",
+            "Use exec python \"$@\" in %runscript to forward arguments."
+          ],
+          "solution": "```singularity\nBootstrap: docker\nFrom: nvcr.io/nvidia/pytorch:24.01-py3\n\n%labels\n    Author HPC-AI Team\n    Description PyTorch HPC training with DeepSpeed\n\n%post\n    pip install --no-cache-dir \\\n        transformers==4.40.0 \\\n        datasets==2.19.0 \\\n        deepspeed==0.14.0\n\n%environment\n    export OMP_NUM_THREADS=1\n    export NCCL_DEBUG=INFO\n\n%runscript\n    exec python \"$@\"\n\n%test\n    python -c \"import torch; print(torch.__version__)\"\n```\n"
+        },
+        {
+          "id": "sing-ex2",
+          "title": "Docker to SIF Conversion",
+          "description": "Write a bash script that: (1) pulls the nvcr.io/nvidia/pytorch:24.01-py3\nimage as a SIF file named pytorch.sif, (2) verifies the image by inspecting\nits labels, (3) tests GPU access inside the container using --nv, and\n(4) checks the Python version inside the container.\n",
+          "exercise_type": "coding",
+          "difficulty": 2,
+          "starter_code": "#!/bin/bash\n# Script to convert Docker image to SIF and validate\nset -euo pipefail\n\n# TODO: Pull the NGC PyTorch image and save as pytorch.sif\n\n# TODO: Inspect the image metadata\n\n# TODO: Test GPU access with --nv flag\n#       (run nvidia-smi inside the container)\n\n# TODO: Check Python version inside the container\n",
+          "test_cases": [
+            {
+              "input": "Check pull command",
+              "expected_output": "apptainer pull"
+            },
+            {
+              "input": "Check SIF filename",
+              "expected_output": "pytorch.sif"
+            },
+            {
+              "input": "Check NV flag",
+              "expected_output": "--nv"
+            },
+            {
+              "input": "Check inspect command",
+              "expected_output": "apptainer inspect"
+            }
+          ],
+          "hints": [
+            "Use 'apptainer pull pytorch.sif docker://nvcr.io/nvidia/pytorch:24.01-py3'.",
+            "Use 'apptainer inspect pytorch.sif' to view metadata.",
+            "Use 'apptainer exec --nv pytorch.sif nvidia-smi' to test GPU."
+          ],
+          "solution": "```bash\n#!/bin/bash\nset -euo pipefail\n\necho \"=== Pulling NGC PyTorch image ===\"\napptainer pull pytorch.sif docker://nvcr.io/nvidia/pytorch:24.01-py3\n\necho \"=== Inspecting image metadata ===\"\napptainer inspect pytorch.sif\n\necho \"=== Testing GPU access ===\"\napptainer exec --nv pytorch.sif nvidia-smi\n\necho \"=== Checking Python version ===\"\napptainer exec pytorch.sif python --version\n\necho \"=== Verifying PyTorch CUDA ===\"\napptainer exec --nv pytorch.sif python -c \\\n    \"import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}')\"\n\necho \"=== All checks passed ===\"\n```\n"
+        },
+        {
+          "id": "sing-ex3",
+          "title": "SLURM Job with Apptainer GPU Container",
+          "description": "Write a complete SLURM batch script for a multi-node distributed training\njob. Request 4 nodes, each with 8 A100 GPUs, 64 CPUs, and 512 GB memory.\nUse Apptainer with --nv to run the container at /shared/containers/pytorch-hpc.sif.\nBind-mount /scratch/datasets as /data (read-only) and /scratch/$USER/output\nas /output. Run torchrun with appropriate distributed settings.\n",
+          "exercise_type": "coding",
+          "difficulty": 4,
+          "starter_code": "#!/bin/bash\n# TODO: SBATCH directives\n#   job-name: distributed-llm\n#   partition: gpu\n#   nodes: 4\n#   ntasks-per-node: 1\n#   gres: gpu:a100:8\n#   cpus-per-task: 64\n#   mem: 512G\n#   time: 48:00:00\n\n# TODO: Load apptainer module\n\n# TODO: Set MASTER_ADDR from SLURM hostnames and MASTER_PORT\n\n# TODO: Use srun with apptainer exec --nv to launch\n#   - bind /scratch/datasets:/data:ro\n#   - bind /scratch/$USER/output:/output\n#   - run torchrun with --nnodes, --nproc_per_node=8\n#   - use rdzv_backend=c10d\n",
+          "test_cases": [
+            {
+              "input": "Check GPU request",
+              "expected_output": "--gres=gpu:a100:8"
+            },
+            {
+              "input": "Check node count",
+              "expected_output": "--nodes=4"
+            },
+            {
+              "input": "Check NV flag",
+              "expected_output": "--nv"
+            },
+            {
+              "input": "Check torchrun",
+              "expected_output": "torchrun"
+            },
+            {
+              "input": "Check bind mount",
+              "expected_output": "--bind /scratch/datasets:/data:ro"
+            }
+          ],
+          "hints": [
+            "Use MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n1).",
+            "srun launches one task per node; torchrun handles per-GPU processes.",
+            "Use --rdzv_id=$SLURM_JOB_ID for unique rendezvous per job."
+          ],
+          "solution": "```bash\n#!/bin/bash\n#SBATCH --job-name=distributed-llm\n#SBATCH --partition=gpu\n#SBATCH --nodes=4\n#SBATCH --ntasks-per-node=1\n#SBATCH --gres=gpu:a100:8\n#SBATCH --cpus-per-task=64\n#SBATCH --mem=512G\n#SBATCH --time=48:00:00\n#SBATCH --output=train_%j.log\n\nmodule load apptainer\n\nexport MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n1)\nexport MASTER_PORT=29500\n\nsrun apptainer exec --nv \\\n    --bind /scratch/datasets:/data:ro \\\n    --bind /scratch/$USER/output:/output \\\n    /shared/containers/pytorch-hpc.sif \\\n    torchrun \\\n        --nnodes=$SLURM_NNODES \\\n        --nproc_per_node=8 \\\n        --rdzv_id=$SLURM_JOB_ID \\\n        --rdzv_backend=c10d \\\n        --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \\\n        train.py \\\n            --data /data \\\n            --output /output \\\n            --bf16\n```\n"
+        },
+        {
+          "id": "sing-ex4",
+          "title": "MPI Container with InfiniBand",
+          "description": "Write an Apptainer definition file for an MPI-enabled HPC simulation.\nBootstrap from ubuntu:22.04, install OpenMPI with InfiniBand support\n(libibverbs-dev, librdmacm-dev, openmpi-bin, libopenmpi-dev), compile\na C++ source file /src/mpi_solver.cpp, and set up the environment for\nInfiniBand networking.\n",
+          "exercise_type": "coding",
+          "difficulty": 4,
+          "starter_code": "# mpi-solver.def — MPI HPC Container\n# TODO: Bootstrap from ubuntu:22.04\n\n# TODO: %post section\n#   - Install OpenMPI with InfiniBand support packages\n#   - Install build-essential, cmake\n#   - Copy and compile the MPI application\n\n# TODO: %environment section\n#   - Set MPI and InfiniBand environment variables\n\n# TODO: %runscript\n#   - Execute the compiled solver\n",
+          "test_cases": [
+            {
+              "input": "Check bootstrap",
+              "expected_output": "Bootstrap: docker"
+            },
+            {
+              "input": "Check OpenMPI",
+              "expected_output": "libopenmpi-dev"
+            },
+            {
+              "input": "Check InfiniBand",
+              "expected_output": "libibverbs"
+            },
+            {
+              "input": "Check environment",
+              "expected_output": "%environment"
+            }
+          ],
+          "hints": [
+            "InfiniBand requires libibverbs-dev, librdmacm-dev, ibverbs-utils.",
+            "Set OMPI_MCA_btl=^tcp to prefer InfiniBand over TCP.",
+            "Include %test to verify mpirun works."
+          ],
+          "solution": "```singularity\nBootstrap: docker\nFrom: ubuntu:22.04\n\n%labels\n    Author HPC-AI Team\n    Description MPI solver with InfiniBand support\n\n%post\n    apt-get update && apt-get install -y --no-install-recommends \\\n        build-essential cmake \\\n        openmpi-bin libopenmpi-dev \\\n        libibverbs-dev librdmacm-dev ibverbs-utils \\\n        && rm -rf /var/lib/apt/lists/*\n\n    mkdir -p /app\n    cp /src/mpi_solver.cpp /app/\n    cd /app && mpicxx -O3 -o mpi_solver mpi_solver.cpp\n\n%environment\n    export OMPI_MCA_btl=openib,self\n    export OMPI_MCA_btl_tcp_if_exclude=lo,docker0\n    export UCX_TLS=rc,ud,sm,self\n\n%runscript\n    exec /app/mpi_solver \"$@\"\n\n%test\n    mpirun --version\n    /app/mpi_solver --help || true\n```\n"
+        },
+        {
+          "id": "sing-ex5",
+          "title": "Overlay and Writable Containers",
+          "description": "Write a bash script that creates a 2 GB writable overlay image, attaches\nit to an existing container (pytorch.sif), installs additional packages\ninto the overlay, and then runs the container with the overlay attached.\nThis pattern is useful for iterative development on HPC systems.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "#!/bin/bash\n# Overlay workflow for iterative development\nset -euo pipefail\n\nSIF_IMAGE=\"pytorch.sif\"\nOVERLAY_IMG=\"dev-overlay.img\"\n\n# TODO: Create a 2 GB writable overlay image\n\n# TODO: Install additional packages into the overlay\n#       (e.g., pip install matplotlib seaborn)\n\n# TODO: Run the container with the overlay attached\n\n# TODO: Start an interactive shell with the overlay for debugging\n",
+          "test_cases": [
+            {
+              "input": "Check overlay create",
+              "expected_output": "apptainer overlay create"
+            },
+            {
+              "input": "Check overlay size",
+              "expected_output": "2048"
+            },
+            {
+              "input": "Check overlay flag",
+              "expected_output": "--overlay"
+            },
+            {
+              "input": "Check exec with overlay",
+              "expected_output": "apptainer exec --overlay"
+            }
+          ],
+          "hints": [
+            "Use 'apptainer overlay create --size 2048 overlay.img' for 2 GB.",
+            "Use '--overlay overlay.img' with exec to attach the overlay.",
+            "Writes inside the container go to the overlay, not the SIF."
+          ],
+          "solution": "```bash\n#!/bin/bash\nset -euo pipefail\n\nSIF_IMAGE=\"pytorch.sif\"\nOVERLAY_IMG=\"dev-overlay.img\"\n\necho \"=== Creating 2 GB writable overlay ===\"\napptainer overlay create --size 2048 \"$OVERLAY_IMG\"\n\necho \"=== Installing additional packages into overlay ===\"\napptainer exec --overlay \"$OVERLAY_IMG\" \"$SIF_IMAGE\" \\\n    pip install --no-cache-dir matplotlib seaborn scikit-learn\n\necho \"=== Running with overlay ===\"\napptainer exec --nv --overlay \"$OVERLAY_IMG\" \"$SIF_IMAGE\" \\\n    python train.py --epochs 10\n\necho \"=== Interactive debugging shell ===\"\n# Uncomment for interactive use:\n# apptainer shell --nv --overlay \"$OVERLAY_IMG\" \"$SIF_IMAGE\"\n```\n"
+        }
+      ]
+    },
+    {
+      "id": "kubernetes-core",
+      "title": "Kubernetes Core Concepts",
+      "order": 3,
+      "objectives": [
+        "Describe Kubernetes control plane and worker node architecture",
+        "Create and manage Pods, Deployments, and Services",
+        "Configure resource requests and limits for CPU and memory",
+        "Set up Namespaces and RBAC for multi-tenant HPC environments",
+        "Provision Persistent Volumes and StorageClasses for HPC storage",
+        "Apply Network Policies for cluster security"
+      ],
+      "content_md": "# Kubernetes Core Concepts\n\n## 1. Architecture Overview\n\nKubernetes (K8s) is a container orchestration platform that automates\ndeployment, scaling, and management of containerized workloads.\n\n```\n┌──────────────────── Control Plane ─────────────────────┐\n│                                                         │\n│  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  │\n│  │  API Server   │  │  Scheduler  │  │     etcd     │  │\n│  │  (kube-api)   │  │             │  │ (key-value   │  │\n│  │  REST gateway │  │ Assigns pods│  │  store)      │  │\n│  │  for all ops  │  │ to nodes    │  │              │  │\n│  └──────┬───────┘  └──────┬──────┘  └──────────────┘  │\n│         │                  │                            │\n│  ┌──────┴──────────────────┴───────────────────────┐   │\n│  │          Controller Manager                      │   │\n│  │  Deployment, ReplicaSet, Job, DaemonSet, etc.   │   │\n│  │  Reconciles desired state vs actual state        │   │\n│  └─────────────────────────────────────────────────┘   │\n└───────────────────────┬─────────────────────────────────┘\n                        │ kubelet API\n  ┌─────────────────────┼──────────────────────────────┐\n  │    Worker Node 1    │                              │\n  │  ┌─────────┐  ┌────┴─────┐  ┌──────────────────┐  │\n  │  │ kubelet  │  │kube-proxy│  │ Container Runtime │  │\n  │  │ (agent)  │  │(network) │  │ (containerd)     │  │\n  │  └─────────┘  └──────────┘  └──────────────────┘  │\n  │  ┌───────┐ ┌───────┐ ┌───────┐                    │\n  │  │ Pod A │ │ Pod B │ │ Pod C │                    │\n  │  └───────┘ └───────┘ └───────┘                    │\n  └────────────────────────────────────────────────────┘\n```\n\n### 1.1 Control Plane Components\n\n| Component              | Role                                          |\n|------------------------|-----------------------------------------------|\n| **API Server**         | Central hub; all communication goes through it |\n| **etcd**               | Distributed key-value store for cluster state  |\n| **Scheduler**          | Assigns Pods to nodes based on resources/constraints |\n| **Controller Manager** | Runs controllers that reconcile desired state  |\n\n### 1.2 Worker Node Components\n\n| Component              | Role                                         |\n|------------------------|----------------------------------------------|\n| **kubelet**            | Agent on each node; manages Pod lifecycle    |\n| **kube-proxy**         | Maintains network rules for Service routing  |\n| **Container Runtime**  | Runs containers (containerd, CRI-O)          |\n\n:::interactive{component=\"ProcessSchedulerViz\"}\n\n## 2. Pods\n\nA **Pod** is the smallest deployable unit — one or more containers\nthat share the same network namespace, storage volumes, and lifecycle.\n\n```yaml\napiVersion: v1\nkind: Pod\nmetadata:\n  name: ml-inference\n  namespace: ml-serving\n  labels:\n    app: inference\n    team: ml-platform\nspec:\n  containers:\n    - name: model-server\n      image: nvcr.io/nvidia/tritonserver:24.01-py3\n      ports:\n        - containerPort: 8000\n          name: http\n        - containerPort: 8001\n          name: grpc\n      resources:\n        requests:\n          cpu: \"4\"\n          memory: \"16Gi\"\n        limits:\n          cpu: \"8\"\n          memory: \"32Gi\"\n          nvidia.com/gpu: 1\n      volumeMounts:\n        - name: model-repo\n          mountPath: /models\n          readOnly: true\n      readinessProbe:\n        httpGet:\n          path: /v2/health/ready\n          port: 8000\n        initialDelaySeconds: 30\n        periodSeconds: 10\n      livenessProbe:\n        httpGet:\n          path: /v2/health/live\n          port: 8000\n        initialDelaySeconds: 60\n        periodSeconds: 30\n  volumes:\n    - name: model-repo\n      persistentVolumeClaim:\n        claimName: model-store-pvc\n  restartPolicy: Always\n```\n\n### 2.1 Resource Requests vs Limits\n\n| Field      | Meaning                                              |\n|------------|------------------------------------------------------|\n| `requests` | Minimum guaranteed resources; used for **scheduling** |\n| `limits`   | Maximum allowed; enforced by **cgroups** at runtime   |\n\n```\nrequests ≤ actual usage ≤ limits\n\n┌────────────────────────────────────────────┐\n│  Node capacity: 64 CPUs, 256 Gi memory     │\n│                                              │\n│  Pod A requests: 4 CPU, 16 Gi  ──┐          │\n│  Pod B requests: 8 CPU, 32 Gi  ──┼─ total   │\n│  Pod C requests: 4 CPU, 16 Gi  ──┘ scheduled │\n│                                              │\n│  Remaining allocatable: 48 CPU, 192 Gi      │\n└────────────────────────────────────────────┘\n```\n\n**Best practice for HPC/ML**: Set requests = limits for GPU workloads\nto get **Guaranteed** QoS class, preventing eviction.\n\n## 3. Deployments\n\nA **Deployment** manages a ReplicaSet and provides declarative\nupdates with rollback support:\n\n```yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: inference-api\n  namespace: ml-serving\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: inference-api\n  strategy:\n    type: RollingUpdate\n    rollingUpdate:\n      maxSurge: 1\n      maxUnavailable: 0\n  template:\n    metadata:\n      labels:\n        app: inference-api\n        version: v2.1.0\n    spec:\n      containers:\n        - name: api\n          image: myregistry/inference-api:v2.1.0\n          ports:\n            - containerPort: 8080\n          resources:\n            requests:\n              cpu: \"2\"\n              memory: \"8Gi\"\n            limits:\n              cpu: \"4\"\n              memory: \"16Gi\"\n              nvidia.com/gpu: 1\n          env:\n            - name: MODEL_NAME\n              value: \"bert-base-uncased\"\n            - name: MAX_BATCH_SIZE\n              valueFrom:\n                configMapKeyRef:\n                  name: inference-config\n                  key: max_batch_size\n```\n\nKey operations:\n\n```bash\nkubectl apply -f deployment.yaml\nkubectl rollout status deployment/inference-api\nkubectl rollout history deployment/inference-api\nkubectl rollout undo deployment/inference-api --to-revision=2\nkubectl scale deployment/inference-api --replicas=5\n```\n\n## 4. Services\n\nServices provide stable networking endpoints for dynamic sets of Pods:\n\n| Type           | Scope              | Use Case                      |\n|----------------|--------------------|-------------------------------|\n| **ClusterIP**  | Cluster-internal   | Internal microservices        |\n| **NodePort**   | Node IP + port     | Development / testing         |\n| **LoadBalancer** | Cloud LB         | Production external access    |\n| **ExternalName** | DNS CNAME        | External service aliasing     |\n\n```yaml\napiVersion: v1\nkind: Service\nmetadata:\n  name: inference-api-svc\n  namespace: ml-serving\nspec:\n  type: ClusterIP\n  selector:\n    app: inference-api\n  ports:\n    - name: http\n      port: 80\n      targetPort: 8080\n    - name: grpc\n      port: 8001\n      targetPort: 8001\n```\n\nDNS resolution: `inference-api-svc.ml-serving.svc.cluster.local`\n\n## 5. ConfigMaps and Secrets\n\n### 5.1 ConfigMaps\n\n```yaml\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: training-config\n  namespace: ml-training\ndata:\n  BATCH_SIZE: \"64\"\n  LEARNING_RATE: \"0.001\"\n  NUM_EPOCHS: \"100\"\n  config.yaml: |\n    model:\n      name: bert-base\n      hidden_size: 768\n    training:\n      warmup_steps: 1000\n      weight_decay: 0.01\n```\n\n### 5.2 Secrets\n\n```yaml\napiVersion: v1\nkind: Secret\nmetadata:\n  name: registry-creds\ntype: kubernetes.io/dockerconfigjson\ndata:\n  .dockerconfigjson: <base64-encoded-docker-config>\n---\napiVersion: v1\nkind: Secret\nmetadata:\n  name: s3-credentials\ntype: Opaque\nstringData:\n  AWS_ACCESS_KEY_ID: \"AKIAIOSFODNN7EXAMPLE\"\n  AWS_SECRET_ACCESS_KEY: \"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"\n```\n\nReference in pods:\n\n```yaml\nspec:\n  containers:\n    - name: app\n      envFrom:\n        - configMapRef:\n            name: training-config\n        - secretRef:\n            name: s3-credentials\n      volumeMounts:\n        - name: config-vol\n          mountPath: /etc/config\n  volumes:\n    - name: config-vol\n      configMap:\n        name: training-config\n        items:\n          - key: config.yaml\n            path: config.yaml\n```\n\n## 6. Namespaces and RBAC\n\n### 6.1 Namespaces for Multi-Tenancy\n\n```bash\nkubectl create namespace ml-training\nkubectl create namespace ml-serving\nkubectl create namespace data-engineering\n```\n\n### 6.2 ResourceQuotas\n\n```yaml\napiVersion: v1\nkind: ResourceQuota\nmetadata:\n  name: ml-training-quota\n  namespace: ml-training\nspec:\n  hard:\n    requests.cpu: \"128\"\n    requests.memory: \"512Gi\"\n    requests.nvidia.com/gpu: \"16\"\n    limits.cpu: \"128\"\n    limits.memory: \"512Gi\"\n    limits.nvidia.com/gpu: \"16\"\n    pods: \"50\"\n    persistentvolumeclaims: \"20\"\n```\n\n### 6.3 RBAC (Role-Based Access Control)\n\n```yaml\n# Role — scoped to a namespace\napiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: ml-developer\n  namespace: ml-training\nrules:\n  - apiGroups: [\"\"]\n    resources: [\"pods\", \"pods/log\", \"pods/exec\", \"services\", \"configmaps\"]\n    verbs: [\"get\", \"list\", \"watch\", \"create\", \"update\", \"delete\"]\n  - apiGroups: [\"apps\"]\n    resources: [\"deployments\"]\n    verbs: [\"get\", \"list\", \"watch\", \"create\", \"update\"]\n  - apiGroups: [\"batch\"]\n    resources: [\"jobs\", \"cronjobs\"]\n    verbs: [\"get\", \"list\", \"watch\", \"create\", \"delete\"]\n---\n# RoleBinding — binds role to a user/group\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  name: ml-developer-binding\n  namespace: ml-training\nsubjects:\n  - kind: Group\n    name: ml-team\n    apiGroup: rbac.authorization.k8s.io\nroleRef:\n  kind: Role\n  name: ml-developer\n  apiGroup: rbac.authorization.k8s.io\n```\n\n## 7. Persistent Volumes and StorageClasses\n\n### 7.1 StorageClass\n\n```yaml\napiVersion: storage.k8s.io/v1\nkind: StorageClass\nmetadata:\n  name: fast-nvme\nprovisioner: kubernetes.io/aws-ebs\nparameters:\n  type: io2\n  iopsPerGB: \"50\"\nreclaimPolicy: Retain\nvolumeBindingMode: WaitForFirstConsumer\nallowVolumeExpansion: true\n```\n\n### 7.2 PersistentVolumeClaim (PVC)\n\n```yaml\napiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: training-data-pvc\n  namespace: ml-training\nspec:\n  accessModes:\n    - ReadWriteMany          # Required for multi-node access\n  storageClassName: fast-nvme\n  resources:\n    requests:\n      storage: 500Gi\n```\n\n### 7.3 For HPC Shared Filesystems (NFS/Lustre)\n\n```yaml\napiVersion: v1\nkind: PersistentVolume\nmetadata:\n  name: lustre-shared-data\nspec:\n  capacity:\n    storage: 10Ti\n  accessModes:\n    - ReadWriteMany\n  nfs:\n    server: lustre-gw.hpc.local\n    path: /lustre/shared/datasets\n  persistentVolumeReclaimPolicy: Retain\n```\n\n## 8. Network Policies\n\nRestrict traffic between namespaces for security:\n\n```yaml\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: deny-all-ingress\n  namespace: ml-training\nspec:\n  podSelector: {}\n  policyTypes:\n    - Ingress\n  ingress: []\n---\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: allow-from-serving\n  namespace: ml-training\nspec:\n  podSelector:\n    matchLabels:\n      app: model-registry\n  ingress:\n    - from:\n        - namespaceSelector:\n            matchLabels:\n              name: ml-serving\n      ports:\n        - protocol: TCP\n          port: 8080\n```\n",
+      "exercises": [
+        {
+          "id": "k8s-core-ex1",
+          "title": "Write a Pod Manifest with Health Checks",
+          "description": "Write a Kubernetes Pod manifest for a model serving container. Use the\nimage nvcr.io/nvidia/tritonserver:24.01-py3, request 1 GPU, 4 CPUs, and\n16Gi memory. Include a readiness probe on /v2/health/ready:8000, a\nliveness probe on /v2/health/live:8000, and mount a PVC named 'model-store'\nat /models as read-only.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# pod-triton.yaml — Triton Inference Server Pod\napiVersion: v1\nkind: Pod\nmetadata:\n  name: triton-server\n  namespace: ml-serving\n  labels:\n    app: triton\nspec:\n  containers:\n    - name: triton\n      # TODO: Set the image\n\n      # TODO: Define container ports (8000 http, 8001 grpc)\n\n      # TODO: Set resource requests and limits\n      #       (4 CPU, 16Gi memory, 1 GPU)\n\n      # TODO: Add readiness probe (HTTP GET /v2/health/ready on port 8000)\n\n      # TODO: Add liveness probe (HTTP GET /v2/health/live on port 8000)\n\n      # TODO: Mount the model-store volume at /models (read-only)\n\n  # TODO: Define the volume from PVC 'model-store'\n",
+          "test_cases": [
+            {
+              "input": "Check image",
+              "expected_output": "nvcr.io/nvidia/tritonserver:24.01-py3"
+            },
+            {
+              "input": "Check GPU resource",
+              "expected_output": "nvidia.com/gpu"
+            },
+            {
+              "input": "Check readiness probe",
+              "expected_output": "/v2/health/ready"
+            },
+            {
+              "input": "Check PVC reference",
+              "expected_output": "model-store"
+            }
+          ],
+          "hints": [
+            "GPU resources go under resources.limits as nvidia.com/gpu: 1.",
+            "Use httpGet for probes with path and port fields.",
+            "Add readOnly: true to the volumeMount for model safety."
+          ],
+          "solution": "```yaml\napiVersion: v1\nkind: Pod\nmetadata:\n  name: triton-server\n  namespace: ml-serving\n  labels:\n    app: triton\nspec:\n  containers:\n    - name: triton\n      image: nvcr.io/nvidia/tritonserver:24.01-py3\n      ports:\n        - containerPort: 8000\n          name: http\n        - containerPort: 8001\n          name: grpc\n      resources:\n        requests:\n          cpu: \"4\"\n          memory: \"16Gi\"\n        limits:\n          cpu: \"4\"\n          memory: \"16Gi\"\n          nvidia.com/gpu: 1\n      readinessProbe:\n        httpGet:\n          path: /v2/health/ready\n          port: 8000\n        initialDelaySeconds: 30\n        periodSeconds: 10\n      livenessProbe:\n        httpGet:\n          path: /v2/health/live\n          port: 8000\n        initialDelaySeconds: 60\n        periodSeconds: 30\n      volumeMounts:\n        - name: model-repo\n          mountPath: /models\n          readOnly: true\n  volumes:\n    - name: model-repo\n      persistentVolumeClaim:\n        claimName: model-store\n```\n"
+        },
+        {
+          "id": "k8s-core-ex2",
+          "title": "Create a Deployment with Rolling Updates",
+          "description": "Write a Kubernetes Deployment for a BERT model serving API with 3 replicas.\nUse image myregistry/bert-serve:v1.0, request 1 GPU, 4 CPUs, 16Gi memory\nper pod. Configure a RollingUpdate strategy with maxSurge=1 and\nmaxUnavailable=0. Include a ConfigMap reference for MAX_BATCH_SIZE.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# deployment-bert.yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: bert-serve\n  namespace: ml-serving\nspec:\n  # TODO: Set replicas to 3\n\n  # TODO: Set selector matchLabels\n\n  # TODO: Configure RollingUpdate strategy\n  #       (maxSurge: 1, maxUnavailable: 0)\n\n  template:\n    metadata:\n      labels:\n        app: bert-serve\n    spec:\n      containers:\n        - name: bert-serve\n          # TODO: Set image\n\n          # TODO: Set container port 8080\n\n          # TODO: Set resource requests and limits\n\n          # TODO: Add env var MAX_BATCH_SIZE from configmap 'inference-config'\n",
+          "test_cases": [
+            {
+              "input": "Check replicas",
+              "expected_output": "replicas: 3"
+            },
+            {
+              "input": "Check strategy",
+              "expected_output": "RollingUpdate"
+            },
+            {
+              "input": "Check maxSurge",
+              "expected_output": "maxSurge: 1"
+            },
+            {
+              "input": "Check GPU",
+              "expected_output": "nvidia.com/gpu: 1"
+            }
+          ],
+          "hints": [
+            "selector.matchLabels must match template.metadata.labels.",
+            "Use valueFrom.configMapKeyRef for ConfigMap references.",
+            "Set requests = limits for Guaranteed QoS on GPU workloads."
+          ],
+          "solution": "```yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: bert-serve\n  namespace: ml-serving\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: bert-serve\n  strategy:\n    type: RollingUpdate\n    rollingUpdate:\n      maxSurge: 1\n      maxUnavailable: 0\n  template:\n    metadata:\n      labels:\n        app: bert-serve\n    spec:\n      containers:\n        - name: bert-serve\n          image: myregistry/bert-serve:v1.0\n          ports:\n            - containerPort: 8080\n          resources:\n            requests:\n              cpu: \"4\"\n              memory: \"16Gi\"\n            limits:\n              cpu: \"4\"\n              memory: \"16Gi\"\n              nvidia.com/gpu: 1\n          env:\n            - name: MAX_BATCH_SIZE\n              valueFrom:\n                configMapKeyRef:\n                  name: inference-config\n                  key: max_batch_size\n```\n"
+        },
+        {
+          "id": "k8s-core-ex3",
+          "title": "Configure PersistentVolume and PVC for HPC Storage",
+          "description": "Write Kubernetes manifests for: (1) a PersistentVolume that exposes a 10 TB\nNFS share at lustre-gw.hpc.local:/lustre/shared/datasets with ReadWriteMany\naccess; (2) a PersistentVolumeClaim in the ml-training namespace that requests\n1 TB from this volume; (3) a Pod that mounts the PVC at /data.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# TODO: PersistentVolume for NFS/Lustre shared storage\n#   - name: lustre-datasets\n#   - capacity: 10Ti\n#   - accessModes: ReadWriteMany\n#   - NFS server: lustre-gw.hpc.local\n#   - NFS path: /lustre/shared/datasets\n---\n# TODO: PersistentVolumeClaim\n#   - name: training-data-pvc\n#   - namespace: ml-training\n#   - accessModes: ReadWriteMany\n#   - request: 1Ti storage\n---\n# TODO: Pod that mounts the PVC at /data\n#   - name: data-processor\n#   - image: python:3.11-slim\n",
+          "test_cases": [
+            {
+              "input": "Check PV kind",
+              "expected_output": "kind: PersistentVolume"
+            },
+            {
+              "input": "Check NFS server",
+              "expected_output": "lustre-gw.hpc.local"
+            },
+            {
+              "input": "Check PVC kind",
+              "expected_output": "kind: PersistentVolumeClaim"
+            },
+            {
+              "input": "Check ReadWriteMany",
+              "expected_output": "ReadWriteMany"
+            }
+          ],
+          "hints": [
+            "PersistentVolumes are cluster-scoped (no namespace).",
+            "PVCs are namespaced and bind to PVs that satisfy their requirements.",
+            "Use the nfs: block in PV spec for NFS volumes."
+          ],
+          "solution": "```yaml\napiVersion: v1\nkind: PersistentVolume\nmetadata:\n  name: lustre-datasets\nspec:\n  capacity:\n    storage: 10Ti\n  accessModes:\n    - ReadWriteMany\n  persistentVolumeReclaimPolicy: Retain\n  nfs:\n    server: lustre-gw.hpc.local\n    path: /lustre/shared/datasets\n---\napiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: training-data-pvc\n  namespace: ml-training\nspec:\n  accessModes:\n    - ReadWriteMany\n  resources:\n    requests:\n      storage: 1Ti\n---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: data-processor\n  namespace: ml-training\nspec:\n  containers:\n    - name: processor\n      image: python:3.11-slim\n      command: [\"python\", \"process.py\"]\n      volumeMounts:\n        - name: data\n          mountPath: /data\n  volumes:\n    - name: data\n      persistentVolumeClaim:\n        claimName: training-data-pvc\n```\n"
+        },
+        {
+          "id": "k8s-core-ex4",
+          "title": "Write RBAC Rules for ML Team",
+          "description": "Create RBAC manifests for a multi-tenant HPC Kubernetes cluster. Define:\n(1) a Role named 'ml-developer' in namespace 'ml-training' that allows\nfull CRUD on pods, jobs, and configmaps, plus read-only on deployments;\n(2) a RoleBinding that binds the 'ml-team' group to this role;\n(3) a ResourceQuota limiting the namespace to 16 GPUs, 64 CPUs, 256Gi memory.\n",
+          "exercise_type": "coding",
+          "difficulty": 4,
+          "starter_code": "# RBAC and ResourceQuota for ml-training namespace\n\n# TODO: Role 'ml-developer' in namespace 'ml-training'\n#   - Full CRUD on pods, pods/log, jobs, configmaps\n#   - Read-only (get, list, watch) on deployments\n---\n# TODO: RoleBinding binding 'ml-team' group to 'ml-developer' role\n---\n# TODO: ResourceQuota limiting:\n#   - 16 GPUs (requests and limits)\n#   - 64 CPUs\n#   - 256Gi memory\n#   - 50 pods max\n",
+          "test_cases": [
+            {
+              "input": "Check Role kind",
+              "expected_output": "kind: Role"
+            },
+            {
+              "input": "Check RoleBinding kind",
+              "expected_output": "kind: RoleBinding"
+            },
+            {
+              "input": "Check GPU quota",
+              "expected_output": "nvidia.com/gpu"
+            },
+            {
+              "input": "Check group subject",
+              "expected_output": "ml-team"
+            }
+          ],
+          "hints": [
+            "Use apiGroups: [''] for core resources (pods, configmaps).",
+            "Use apiGroups: ['batch'] for jobs.",
+            "RoleBinding subjects use kind: Group for team-based access."
+          ],
+          "solution": "```yaml\napiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n  name: ml-developer\n  namespace: ml-training\nrules:\n  - apiGroups: [\"\"]\n    resources: [\"pods\", \"pods/log\", \"pods/exec\", \"configmaps\", \"services\"]\n    verbs: [\"get\", \"list\", \"watch\", \"create\", \"update\", \"patch\", \"delete\"]\n  - apiGroups: [\"batch\"]\n    resources: [\"jobs\", \"cronjobs\"]\n    verbs: [\"get\", \"list\", \"watch\", \"create\", \"update\", \"patch\", \"delete\"]\n  - apiGroups: [\"apps\"]\n    resources: [\"deployments\"]\n    verbs: [\"get\", \"list\", \"watch\"]\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  name: ml-developer-binding\n  namespace: ml-training\nsubjects:\n  - kind: Group\n    name: ml-team\n    apiGroup: rbac.authorization.k8s.io\nroleRef:\n  kind: Role\n  name: ml-developer\n  apiGroup: rbac.authorization.k8s.io\n---\napiVersion: v1\nkind: ResourceQuota\nmetadata:\n  name: ml-training-quota\n  namespace: ml-training\nspec:\n  hard:\n    requests.cpu: \"64\"\n    requests.memory: \"256Gi\"\n    requests.nvidia.com/gpu: \"16\"\n    limits.cpu: \"64\"\n    limits.memory: \"256Gi\"\n    limits.nvidia.com/gpu: \"16\"\n    pods: \"50\"\n```\n"
+        },
+        {
+          "id": "k8s-core-ex5",
+          "title": "Network Policy for Namespace Isolation",
+          "description": "Write NetworkPolicy manifests that: (1) deny all ingress traffic to the\nml-training namespace by default; (2) allow traffic from the ml-serving\nnamespace to pods labeled app=model-registry on port 8080; (3) allow\nDNS traffic (port 53) to kube-system for service discovery.\n",
+          "exercise_type": "coding",
+          "difficulty": 4,
+          "starter_code": "# Network Policies for ml-training namespace\n\n# TODO: Default deny all ingress\n#   - Apply to all pods in ml-training\n#   - Empty ingress rules\n\n---\n# TODO: Allow ingress from ml-serving namespace\n#   - Only to pods with label app=model-registry\n#   - Only on port 8080 TCP\n\n---\n# TODO: Allow DNS egress to kube-system\n#   - Allow UDP port 53 to kube-system\n",
+          "test_cases": [
+            {
+              "input": "Check NetworkPolicy kind",
+              "expected_output": "kind: NetworkPolicy"
+            },
+            {
+              "input": "Check default deny",
+              "expected_output": "ingress: []"
+            },
+            {
+              "input": "Check namespace selector",
+              "expected_output": "namespaceSelector"
+            },
+            {
+              "input": "Check port 8080",
+              "expected_output": "port: 8080"
+            }
+          ],
+          "hints": [
+            "Default deny uses an empty podSelector {} and ingress: [].",
+            "Use namespaceSelector with matchLabels to allow cross-namespace traffic.",
+            "The kube-system namespace needs a label for the selector to work."
+          ],
+          "solution": "```yaml\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: default-deny-ingress\n  namespace: ml-training\nspec:\n  podSelector: {}\n  policyTypes:\n    - Ingress\n  ingress: []\n---\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: allow-from-serving\n  namespace: ml-training\nspec:\n  podSelector:\n    matchLabels:\n      app: model-registry\n  policyTypes:\n    - Ingress\n  ingress:\n    - from:\n        - namespaceSelector:\n            matchLabels:\n              kubernetes.io/metadata.name: ml-serving\n      ports:\n        - protocol: TCP\n          port: 8080\n---\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: allow-dns-egress\n  namespace: ml-training\nspec:\n  podSelector: {}\n  policyTypes:\n    - Egress\n  egress:\n    - to:\n        - namespaceSelector:\n            matchLabels:\n              kubernetes.io/metadata.name: kube-system\n      ports:\n        - protocol: UDP\n          port: 53\n        - protocol: TCP\n          port: 53\n```\n"
+        }
+      ]
+    },
+    {
+      "id": "kubernetes-gpu",
+      "title": "GPU Scheduling in Kubernetes",
+      "order": 4,
+      "objectives": [
+        "Install and configure the NVIDIA GPU Operator and device plugin",
+        "Schedule GPU workloads with resource requests",
+        "Configure Multi-Instance GPU (MIG) for hardware-level GPU sharing",
+        "Monitor GPUs with DCGM and Prometheus",
+        "Submit distributed training jobs using PyTorchJob and MPIJob CRDs",
+        "Compare GPU sharing strategies: time-slicing vs MPS vs MIG"
+      ],
+      "content_md": "# GPU Scheduling in Kubernetes\n\n## 1. NVIDIA GPU Operator and Device Plugin\n\nThe **NVIDIA GPU Operator** automates the deployment of all software\ncomponents needed to run GPU workloads on Kubernetes:\n\n```\n┌─────────────────────────────────────────────────┐\n│              NVIDIA GPU Operator                  │\n│                                                   │\n│  ┌──────────────┐  ┌──────────────────────────┐  │\n│  │ NVIDIA Driver │  │ NVIDIA Container Toolkit │  │\n│  │ (DaemonSet)  │  │ (DaemonSet)              │  │\n│  └──────────────┘  └──────────────────────────┘  │\n│  ┌──────────────┐  ┌──────────────────────────┐  │\n│  │ Device Plugin │  │ GPU Feature Discovery    │  │\n│  │ (DaemonSet)  │  │ (DaemonSet)              │  │\n│  └──────────────┘  └──────────────────────────┘  │\n│  ┌──────────────┐  ┌──────────────────────────┐  │\n│  │ DCGM Exporter│  │ MIG Manager              │  │\n│  │ (DaemonSet)  │  │ (DaemonSet)              │  │\n│  └──────────────┘  └──────────────────────────┘  │\n└─────────────────────────────────────────────────┘\n```\n\n### 1.1 Installing the GPU Operator\n\n```bash\n# Add the NVIDIA Helm repository\nhelm repo add nvidia https://helm.ngc.nvidia.com/nvidia\nhelm repo update\n\n# Install the GPU Operator\nhelm install gpu-operator nvidia/gpu-operator \\\n    --namespace gpu-operator \\\n    --create-namespace \\\n    --set driver.enabled=true \\\n    --set toolkit.enabled=true \\\n    --set devicePlugin.enabled=true \\\n    --set dcgmExporter.enabled=true \\\n    --set migManager.enabled=true \\\n    --set gfd.enabled=true\n```\n\n### 1.2 The Device Plugin\n\nThe **NVIDIA device plugin** runs as a DaemonSet on every GPU node. It:\n- Registers `nvidia.com/gpu` as a schedulable resource\n- Reports GPU count and health to the kubelet\n- Allocates specific GPUs to containers via environment variables\n\n```bash\n# Verify GPU availability across the cluster\nkubectl get nodes -o custom-columns=\\\n  NAME:.metadata.name,\\\n  GPUS:.status.capacity.nvidia\\\\.com/gpu,\\\n  GPU_TYPE:.metadata.labels.nvidia\\\\.com/gpu\\\\.product\n\n# Example output:\n# NAME          GPUS   GPU_TYPE\n# gpu-node-01   8      NVIDIA-A100-SXM4-80GB\n# gpu-node-02   8      NVIDIA-A100-SXM4-80GB\n# gpu-node-03   4      NVIDIA-H100-SXM5-80GB\n```\n\n### 1.3 GPU Feature Discovery (GFD)\n\nGFD automatically labels nodes with GPU properties:\n\n```yaml\n# Labels added by GFD\nnvidia.com/gpu.product: \"NVIDIA-A100-SXM4-80GB\"\nnvidia.com/gpu.memory: \"81920\"           # MB\nnvidia.com/gpu.count: \"8\"\nnvidia.com/gpu.family: \"ampere\"\nnvidia.com/gpu.compute.major: \"8\"\nnvidia.com/gpu.compute.minor: \"0\"\nnvidia.com/cuda.driver.major: \"535\"\nnvidia.com/mig.capable: \"true\"\n```\n\nUse these labels for targeted scheduling:\n\n```yaml\nnodeSelector:\n  nvidia.com/gpu.product: \"NVIDIA-A100-SXM4-80GB\"\n  nvidia.com/gpu.count: \"8\"\n```\n\n## 2. GPU Resource Scheduling\n\n### 2.1 Requesting GPUs in Pods\n\n```yaml\napiVersion: v1\nkind: Pod\nmetadata:\n  name: gpu-training\nspec:\n  containers:\n    - name: trainer\n      image: nvcr.io/nvidia/pytorch:24.01-py3\n      command: [\"torchrun\", \"--nproc_per_node=4\", \"train.py\"]\n      resources:\n        requests:\n          cpu: \"32\"\n          memory: \"128Gi\"\n        limits:\n          cpu: \"32\"\n          memory: \"128Gi\"\n          nvidia.com/gpu: 4\n  restartPolicy: Never\n```\n\n**Key rules for GPU scheduling:**\n\n| Rule                        | Detail                                    |\n|-----------------------------|-------------------------------------------|\n| Integer only                | Cannot request 0.5 GPUs (use MIG instead) |\n| Limits required             | GPUs must be in `limits` (not just requests) |\n| No overcommit (default)     | 4 GPU request needs node with ≥4 free GPUs |\n| Same node only              | All GPUs for a pod come from one node     |\n| requests defaults to limits | If only limits set, requests = limits     |\n\n### 2.2 Node Affinity for GPU Types\n\n```yaml\nspec:\n  affinity:\n    nodeAffinity:\n      requiredDuringSchedulingIgnoredDuringExecution:\n        nodeSelectorTerms:\n          - matchExpressions:\n              - key: nvidia.com/gpu.product\n                operator: In\n                values:\n                  - \"NVIDIA-A100-SXM4-80GB\"\n                  - \"NVIDIA-H100-SXM5-80GB\"\n      preferredDuringSchedulingIgnoredDuringExecution:\n        - weight: 100\n          preference:\n            matchExpressions:\n              - key: nvidia.com/gpu.product\n                operator: In\n                values:\n                  - \"NVIDIA-H100-SXM5-80GB\"\n```\n\n## 3. Multi-Instance GPU (MIG)\n\nNVIDIA A100 and H100 GPUs support **MIG** — hardware-level\npartitioning into isolated GPU instances with **guaranteed**\ncompute and memory:\n\n```\n┌─────────────────── A100 80GB ───────────────────┐\n│                                                   │\n│  Full GPU: 108 SMs, 80 GB HBM2e                  │\n│                                                   │\n│  MIG Partitioning Options:                        │\n│  ┌─────────────────────────────────────────────┐  │\n│  │ 7× 1g.10gb  (each: ~15 SMs, 10 GB)         │  │\n│  └─────────────────────────────────────────────┘  │\n│  ┌──────────────────┐ ┌──────────────────────┐   │\n│  │ 1× 3g.40gb       │ │ 4× 1g.10gb           │   │\n│  │ (42 SMs, 40 GB) │ │ (each: 15 SMs, 10 GB)│   │\n│  └──────────────────┘ └──────────────────────┘   │\n│  ┌──────────────────────────────────────────────┐ │\n│  │ 1× 7g.80gb  (full GPU, 108 SMs, 80 GB)      │ │\n│  └──────────────────────────────────────────────┘ │\n└───────────────────────────────────────────────────┘\n```\n\n### 3.1 MIG Profiles\n\n| Profile (A100 80GB)  | SMs  | Memory  | Use Case                    |\n|----------------------|------|---------|-----------------------------|\n| `1g.10gb`            | ~15  | 10 GB   | Small inference, dev        |\n| `2g.20gb`            | ~28  | 20 GB   | Medium inference            |\n| `3g.40gb`            | ~42  | 40 GB   | Fine-tuning, medium models  |\n| `4g.40gb`            | ~56  | 40 GB   | Training medium models      |\n| `7g.80gb`            | 108  | 80 GB   | Large model training        |\n\n### 3.2 Enabling MIG\n\n```bash\n# Enable MIG mode on GPU 0\nsudo nvidia-smi -i 0 -mig 1\n\n# Create MIG instances (7× 1g.10gb)\nsudo nvidia-smi mig -i 0 -cgi 19,19,19,19,19,19,19 -C\n\n# List MIG instances\nnvidia-smi mig -i 0 -lgi\nnvidia-smi mig -i 0 -lci\n\n# Destroy MIG instances\nsudo nvidia-smi mig -i 0 -dci\nsudo nvidia-smi mig -i 0 -dgi\n```\n\n### 3.3 MIG in Kubernetes\n\nThe device plugin exposes each MIG slice as a separate resource:\n\n```yaml\napiVersion: v1\nkind: Pod\nmetadata:\n  name: inference-small\nspec:\n  containers:\n    - name: model\n      image: myregistry/bert-serve:v1.0\n      resources:\n        limits:\n          nvidia.com/mig-1g.10gb: 1   # Request one MIG slice\n```\n\n### 3.4 MIG Manager ConfigMap\n\n```yaml\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: mig-parted-config\n  namespace: gpu-operator\ndata:\n  config.yaml: |\n    version: v1\n    mig-configs:\n      all-1g.10gb:\n        - device-filter: [\"0x20B210DE\", \"0x20B510DE\"]\n          devices: all\n          mig-enabled: true\n          mig-devices:\n            \"1g.10gb\": 7\n      mixed-training-inference:\n        - device-filter: [\"0x20B210DE\"]\n          devices: [0,1,2,3]\n          mig-enabled: true\n          mig-devices:\n            \"3g.40gb\": 1\n            \"1g.10gb\": 4\n        - device-filter: [\"0x20B210DE\"]\n          devices: [4,5,6,7]\n          mig-enabled: false\n```\n\n## 4. GPU Monitoring with DCGM\n\nThe **NVIDIA Data Center GPU Manager (DCGM)** provides deep GPU\ntelemetry. The DCGM Exporter runs as a DaemonSet and exposes\nPrometheus metrics:\n\n```bash\n# Key DCGM metrics exposed to Prometheus\nDCGM_FI_DEV_GPU_UTIL          # GPU utilization %\nDCGM_FI_DEV_FB_USED           # Framebuffer memory used (MB)\nDCGM_FI_DEV_FB_FREE           # Framebuffer memory free (MB)\nDCGM_FI_DEV_GPU_TEMP          # GPU temperature (°C)\nDCGM_FI_DEV_POWER_USAGE       # Power consumption (W)\nDCGM_FI_DEV_SM_CLOCK          # SM clock frequency (MHz)\nDCGM_FI_DEV_PCIE_TX_THROUGHPUT  # PCIe TX bandwidth\nDCGM_FI_DEV_PCIE_RX_THROUGHPUT  # PCIe RX bandwidth\nDCGM_FI_DEV_NVLINK_BANDWIDTH_TOTAL  # NVLink bandwidth\nDCGM_FI_DEV_XID_ERRORS        # GPU XID error count\n```\n\n### 4.1 DCGM Exporter Configuration\n\n```yaml\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: dcgm-exporter-config\n  namespace: gpu-operator\ndata:\n  dcgm-metrics.csv: |\n    DCGM_FI_DEV_GPU_UTIL, gauge, GPU utilization\n    DCGM_FI_DEV_FB_USED, gauge, Frame buffer used (MB)\n    DCGM_FI_DEV_FB_FREE, gauge, Frame buffer free (MB)\n    DCGM_FI_DEV_GPU_TEMP, gauge, GPU temperature (C)\n    DCGM_FI_DEV_POWER_USAGE, gauge, Power usage (W)\n    DCGM_FI_DEV_PCIE_TX_THROUGHPUT, counter, PCIe TX (KB/s)\n    DCGM_FI_DEV_PCIE_RX_THROUGHPUT, counter, PCIe RX (KB/s)\n```\n\n### 4.2 Grafana Dashboard Queries\n\n```promql\n# Average GPU utilization per node\navg by (node) (DCGM_FI_DEV_GPU_UTIL{namespace=\"gpu-operator\"})\n\n# GPU memory usage per pod\nDCGM_FI_DEV_FB_USED{namespace=\"ml-training\"} /\n(DCGM_FI_DEV_FB_USED{namespace=\"ml-training\"} + DCGM_FI_DEV_FB_FREE{namespace=\"ml-training\"}) * 100\n\n# GPU temperature alert (> 85°C)\nDCGM_FI_DEV_GPU_TEMP > 85\n\n# Total cluster GPU utilization\navg(DCGM_FI_DEV_GPU_UTIL)\n```\n\n## 5. Training Jobs with CRDs\n\n### 5.1 Kubeflow PyTorchJob\n\n```yaml\napiVersion: kubeflow.org/v1\nkind: PyTorchJob\nmetadata:\n  name: llm-finetune\n  namespace: ml-training\nspec:\n  elasticPolicy:\n    minReplicas: 2\n    maxReplicas: 8\n    rdzvBackend: c10d\n  pytorchReplicaSpecs:\n    Master:\n      replicas: 1\n      template:\n        spec:\n          containers:\n            - name: pytorch\n              image: myregistry/llm-train:v2.0\n              command:\n                - torchrun\n                - --nproc_per_node=8\n                - --nnodes=$(WORLD_SIZE)\n                - train.py\n                - --bf16\n                - --gradient-checkpointing\n              env:\n                - name: NCCL_DEBUG\n                  value: \"INFO\"\n                - name: NCCL_SOCKET_IFNAME\n                  value: \"eth0\"\n              resources:\n                limits:\n                  cpu: \"64\"\n                  memory: \"512Gi\"\n                  nvidia.com/gpu: 8\n              volumeMounts:\n                - name: datasets\n                  mountPath: /data\n                  readOnly: true\n                - name: checkpoints\n                  mountPath: /checkpoints\n          volumes:\n            - name: datasets\n              persistentVolumeClaim:\n                claimName: training-data\n            - name: checkpoints\n              persistentVolumeClaim:\n                claimName: checkpoint-store\n    Worker:\n      replicas: 3\n      template:\n        spec:\n          containers:\n            - name: pytorch\n              image: myregistry/llm-train:v2.0\n              command:\n                - torchrun\n                - --nproc_per_node=8\n                - --nnodes=$(WORLD_SIZE)\n                - train.py\n                - --bf16\n                - --gradient-checkpointing\n              env:\n                - name: NCCL_DEBUG\n                  value: \"INFO\"\n              resources:\n                limits:\n                  cpu: \"64\"\n                  memory: \"512Gi\"\n                  nvidia.com/gpu: 8\n```\n\n### 5.2 Kubeflow MPIJob\n\n```yaml\napiVersion: kubeflow.org/v2beta1\nkind: MPIJob\nmetadata:\n  name: horovod-training\n  namespace: ml-training\nspec:\n  slotsPerWorker: 8\n  mpiReplicaSpecs:\n    Launcher:\n      replicas: 1\n      template:\n        spec:\n          containers:\n            - name: launcher\n              image: myregistry/horovod-train:v1.0\n              command:\n                - mpirun\n                - --allow-run-as-root\n                - -np\n                - \"32\"\n                - --bind-to\n                - none\n                - -x\n                - NCCL_DEBUG=INFO\n                - python\n                - train.py\n    Worker:\n      replicas: 4\n      template:\n        spec:\n          containers:\n            - name: worker\n              image: myregistry/horovod-train:v1.0\n              resources:\n                limits:\n                  nvidia.com/gpu: 8\n```\n\n## 6. GPU Sharing Strategies\n\n| Strategy        | Isolation  | Memory Isolation | Overhead | Supported GPUs  |\n|-----------------|-----------|-----------------|----------|-----------------|\n| **Time-slicing**| Software  | None            | Low      | All NVIDIA GPUs |\n| **MPS**         | Software  | Partial (limits)| Very low | Volta+          |\n| **MIG**         | Hardware  | Full            | None     | A100, H100 only |\n\n### 6.1 Time-Slicing Configuration\n\n```yaml\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: device-plugin-config\n  namespace: gpu-operator\ndata:\n  config.yaml: |\n    version: v1\n    sharing:\n      timeSlicing:\n        renameByDefault: false\n        failRequestsGreaterThanOne: false\n        resources:\n          - name: nvidia.com/gpu\n            replicas: 4\n```\n\n### 6.2 MPS (Multi-Process Service)\n\n```yaml\n# Enable MPS via GPU Operator\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: device-plugin-config\n  namespace: gpu-operator\ndata:\n  config.yaml: |\n    version: v1\n    sharing:\n      mps:\n        renameByDefault: false\n        failRequestsGreaterThanOne: false\n        resources:\n          - name: nvidia.com/gpu\n            replicas: 10\n            devices: all\n```\n\nChoose based on workload:\n- **Time-slicing**: Development, interactive notebooks\n- **MPS**: Inference with many small models, low-latency\n- **MIG**: Production inference with SLA requirements\n",
+      "exercises": [
+        {
+          "id": "k8s-gpu-ex1",
+          "title": "GPU Pod Manifest with Node Affinity",
+          "description": "Write a Kubernetes Pod manifest for a PyTorch training job that requests\n4 A100 GPUs. Use node affinity to prefer A100 nodes (nvidia.com/gpu.product:\nNVIDIA-A100-SXM4-80GB), request 32 CPUs and 128Gi memory. Set NCCL_DEBUG=INFO\nand CUDA_VISIBLE_DEVICES environment variables. Use the image\nnvcr.io/nvidia/pytorch:24.01-py3.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# gpu-training-pod.yaml\napiVersion: v1\nkind: Pod\nmetadata:\n  name: pytorch-multi-gpu\n  namespace: ml-training\nspec:\n  # TODO: Add node affinity for A100 GPUs\n  #   nvidia.com/gpu.product: NVIDIA-A100-SXM4-80GB\n\n  containers:\n    - name: trainer\n      # TODO: Set image\n\n      # TODO: Set command to run torchrun with 4 GPUs\n\n      # TODO: Set environment variables\n      #   NCCL_DEBUG=INFO, CUDA_VISIBLE_DEVICES=0,1,2,3\n\n      # TODO: Set resource requests and limits\n      #   32 CPUs, 128Gi memory, 4 GPUs\n\n  restartPolicy: Never\n",
+          "test_cases": [
+            {
+              "input": "Check GPU count",
+              "expected_output": "nvidia.com/gpu: 4"
+            },
+            {
+              "input": "Check node affinity",
+              "expected_output": "NVIDIA-A100-SXM4-80GB"
+            },
+            {
+              "input": "Check NCCL env",
+              "expected_output": "NCCL_DEBUG"
+            },
+            {
+              "input": "Check image",
+              "expected_output": "nvcr.io/nvidia/pytorch:24.01-py3"
+            }
+          ],
+          "hints": [
+            "Use spec.affinity.nodeAffinity with requiredDuringSchedulingIgnoredDuringExecution.",
+            "GPUs go in resources.limits as nvidia.com/gpu: 4.",
+            "Set requests equal to limits for Guaranteed QoS class."
+          ],
+          "solution": "```yaml\napiVersion: v1\nkind: Pod\nmetadata:\n  name: pytorch-multi-gpu\n  namespace: ml-training\nspec:\n  affinity:\n    nodeAffinity:\n      requiredDuringSchedulingIgnoredDuringExecution:\n        nodeSelectorTerms:\n          - matchExpressions:\n              - key: nvidia.com/gpu.product\n                operator: In\n                values:\n                  - \"NVIDIA-A100-SXM4-80GB\"\n  containers:\n    - name: trainer\n      image: nvcr.io/nvidia/pytorch:24.01-py3\n      command: [\"torchrun\", \"--nproc_per_node=4\", \"train.py\"]\n      env:\n        - name: NCCL_DEBUG\n          value: \"INFO\"\n        - name: CUDA_VISIBLE_DEVICES\n          value: \"0,1,2,3\"\n      resources:\n        requests:\n          cpu: \"32\"\n          memory: \"128Gi\"\n        limits:\n          cpu: \"32\"\n          memory: \"128Gi\"\n          nvidia.com/gpu: 4\n  restartPolicy: Never\n```\n"
+        },
+        {
+          "id": "k8s-gpu-ex2",
+          "title": "MIG Configuration for Mixed Workloads",
+          "description": "Write a MIG Manager ConfigMap that configures an A100 80GB node with a\nmixed partitioning strategy: GPUs 0-3 each get 1× 3g.40gb and 4× 1g.10gb\nMIG slices (for a mix of training and inference), and GPUs 4-7 remain\nas full GPUs (MIG disabled) for large training jobs. Use the A100 device\nfilter 0x20B210DE.\n",
+          "exercise_type": "coding",
+          "difficulty": 4,
+          "starter_code": "# mig-config.yaml — Mixed MIG Configuration\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: mig-parted-config\n  namespace: gpu-operator\ndata:\n  config.yaml: |\n    version: v1\n    mig-configs:\n      # TODO: Define 'mixed-workload' config\n      #   GPUs 0-3: MIG enabled\n      #     - 1× 3g.40gb slice (for medium training)\n      #     - 4× 1g.10gb slices (for inference)\n      #   GPUs 4-7: MIG disabled (full GPUs for large training)\n      #   Use device-filter: [\"0x20B210DE\"] for A100\n",
+          "test_cases": [
+            {
+              "input": "Check MIG config name",
+              "expected_output": "mixed-workload"
+            },
+            {
+              "input": "Check 3g.40gb",
+              "expected_output": "3g.40gb"
+            },
+            {
+              "input": "Check 1g.10gb",
+              "expected_output": "1g.10gb"
+            },
+            {
+              "input": "Check MIG disabled",
+              "expected_output": "mig-enabled: false"
+            }
+          ],
+          "hints": [
+            "Use 'devices: [0,1,2,3]' to target specific GPUs.",
+            "Each MIG config entry can target different device subsets.",
+            "MIG disabled GPUs still appear as nvidia.com/gpu resources."
+          ],
+          "solution": "```yaml\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: mig-parted-config\n  namespace: gpu-operator\ndata:\n  config.yaml: |\n    version: v1\n    mig-configs:\n      mixed-workload:\n        - device-filter: [\"0x20B210DE\"]\n          devices: [0,1,2,3]\n          mig-enabled: true\n          mig-devices:\n            \"3g.40gb\": 1\n            \"1g.10gb\": 4\n        - device-filter: [\"0x20B210DE\"]\n          devices: [4,5,6,7]\n          mig-enabled: false\n```\nThis gives: 4× 3g.40gb + 16× 1g.10gb MIG slices + 4 full GPUs.\n"
+        },
+        {
+          "id": "k8s-gpu-ex3",
+          "title": "PyTorchJob for Distributed Training",
+          "description": "Write a Kubeflow PyTorchJob CRD that launches a distributed fine-tuning\njob with 1 Master and 3 Workers. Each replica uses the image\nmyregistry/llm-finetune:v2.0, requests 8 GPUs, 64 CPUs, and 512Gi memory.\nInclude NCCL environment variables, mount a PVC 'training-data' at /data,\nand use torchrun with elastic training support.\n",
+          "exercise_type": "coding",
+          "difficulty": 4,
+          "starter_code": "# pytorchjob-finetune.yaml\napiVersion: kubeflow.org/v1\nkind: PyTorchJob\nmetadata:\n  name: llm-finetune\n  namespace: ml-training\nspec:\n  # TODO: Add elastic policy (min 2, max 8 replicas)\n\n  pytorchReplicaSpecs:\n    # TODO: Master spec\n    #   - 1 replica\n    #   - image: myregistry/llm-finetune:v2.0\n    #   - command: torchrun with --nproc_per_node=8\n    #   - env: NCCL_DEBUG=INFO, NCCL_SOCKET_IFNAME=eth0\n    #   - resources: 64 CPU, 512Gi, 8 GPU\n    #   - volumeMount: training-data at /data\n\n    # TODO: Worker spec (3 replicas, same config as Master)\n",
+          "test_cases": [
+            {
+              "input": "Check kind",
+              "expected_output": "kind: PyTorchJob"
+            },
+            {
+              "input": "Check GPU count",
+              "expected_output": "nvidia.com/gpu: 8"
+            },
+            {
+              "input": "Check worker replicas",
+              "expected_output": "replicas: 3"
+            },
+            {
+              "input": "Check NCCL env",
+              "expected_output": "NCCL_DEBUG"
+            },
+            {
+              "input": "Check volume mount",
+              "expected_output": "training-data"
+            }
+          ],
+          "hints": [
+            "elasticPolicy goes under spec, before pytorchReplicaSpecs.",
+            "Both Master and Worker need identical container specs.",
+            "The Training Operator auto-sets MASTER_ADDR and MASTER_PORT."
+          ],
+          "solution": "```yaml\napiVersion: kubeflow.org/v1\nkind: PyTorchJob\nmetadata:\n  name: llm-finetune\n  namespace: ml-training\nspec:\n  elasticPolicy:\n    minReplicas: 2\n    maxReplicas: 8\n    rdzvBackend: c10d\n  pytorchReplicaSpecs:\n    Master:\n      replicas: 1\n      template:\n        spec:\n          containers:\n            - name: pytorch\n              image: myregistry/llm-finetune:v2.0\n              command:\n                - torchrun\n                - --nproc_per_node=8\n                - --nnodes=$(WORLD_SIZE)\n                - train.py\n                - --bf16\n              env:\n                - name: NCCL_DEBUG\n                  value: \"INFO\"\n                - name: NCCL_SOCKET_IFNAME\n                  value: \"eth0\"\n              resources:\n                limits:\n                  cpu: \"64\"\n                  memory: \"512Gi\"\n                  nvidia.com/gpu: 8\n              volumeMounts:\n                - name: data\n                  mountPath: /data\n          volumes:\n            - name: data\n              persistentVolumeClaim:\n                claimName: training-data\n    Worker:\n      replicas: 3\n      template:\n        spec:\n          containers:\n            - name: pytorch\n              image: myregistry/llm-finetune:v2.0\n              command:\n                - torchrun\n                - --nproc_per_node=8\n                - --nnodes=$(WORLD_SIZE)\n                - train.py\n                - --bf16\n              env:\n                - name: NCCL_DEBUG\n                  value: \"INFO\"\n                - name: NCCL_SOCKET_IFNAME\n                  value: \"eth0\"\n              resources:\n                limits:\n                  cpu: \"64\"\n                  memory: \"512Gi\"\n                  nvidia.com/gpu: 8\n              volumeMounts:\n                - name: data\n                  mountPath: /data\n          volumes:\n            - name: data\n              persistentVolumeClaim:\n                claimName: training-data\n```\n"
+        },
+        {
+          "id": "k8s-gpu-ex4",
+          "title": "GPU Monitoring with DCGM and Prometheus",
+          "description": "Write: (1) a DCGM Exporter ConfigMap defining custom metrics to collect\n(GPU utilization, memory used/free, temperature, power); (2) a ServiceMonitor\nfor Prometheus to scrape the DCGM exporter; (3) a PrometheusRule with alerts\nfor GPU temperature > 85°C and GPU memory > 90% usage.\n",
+          "exercise_type": "coding",
+          "difficulty": 4,
+          "starter_code": "# TODO: DCGM Exporter ConfigMap with metrics list\n#   Include: GPU_UTIL, FB_USED, FB_FREE, GPU_TEMP, POWER_USAGE\n\n---\n# TODO: ServiceMonitor for Prometheus scraping\n#   Target the dcgm-exporter service in gpu-operator namespace\n#   Scrape interval: 15s\n\n---\n# TODO: PrometheusRule with alerts:\n#   1. GPUTemperatureHigh: GPU temp > 85°C for 5m\n#   2. GPUMemoryHigh: GPU memory usage > 90% for 10m\n",
+          "test_cases": [
+            {
+              "input": "Check DCGM metric",
+              "expected_output": "DCGM_FI_DEV_GPU_UTIL"
+            },
+            {
+              "input": "Check ServiceMonitor",
+              "expected_output": "kind: ServiceMonitor"
+            },
+            {
+              "input": "Check alert rule",
+              "expected_output": "kind: PrometheusRule"
+            },
+            {
+              "input": "Check temperature threshold",
+              "expected_output": "85"
+            }
+          ],
+          "hints": [
+            "DCGM metric names use the DCGM_FI_DEV_ prefix.",
+            "ServiceMonitor uses spec.selector to find the target service.",
+            "PrometheusRule uses PromQL expressions in the expr field."
+          ],
+          "solution": "```yaml\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: dcgm-exporter-metrics\n  namespace: gpu-operator\ndata:\n  dcgm-metrics.csv: |\n    DCGM_FI_DEV_GPU_UTIL, gauge, GPU utilization (%)\n    DCGM_FI_DEV_FB_USED, gauge, Framebuffer memory used (MB)\n    DCGM_FI_DEV_FB_FREE, gauge, Framebuffer memory free (MB)\n    DCGM_FI_DEV_GPU_TEMP, gauge, GPU temperature (C)\n    DCGM_FI_DEV_POWER_USAGE, gauge, Power usage (W)\n---\napiVersion: monitoring.coreos.com/v1\nkind: ServiceMonitor\nmetadata:\n  name: dcgm-exporter\n  namespace: gpu-operator\nspec:\n  selector:\n    matchLabels:\n      app: nvidia-dcgm-exporter\n  endpoints:\n    - port: metrics\n      interval: 15s\n---\napiVersion: monitoring.coreos.com/v1\nkind: PrometheusRule\nmetadata:\n  name: gpu-alerts\n  namespace: gpu-operator\nspec:\n  groups:\n    - name: gpu.rules\n      rules:\n        - alert: GPUTemperatureHigh\n          expr: DCGM_FI_DEV_GPU_TEMP > 85\n          for: 5m\n          labels:\n            severity: warning\n          annotations:\n            summary: \"GPU temperature exceeds 85°C\"\n        - alert: GPUMemoryHigh\n          expr: >\n            DCGM_FI_DEV_FB_USED /\n            (DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE) * 100 > 90\n          for: 10m\n          labels:\n            severity: warning\n          annotations:\n            summary: \"GPU memory usage exceeds 90%\"\n```\n"
+        },
+        {
+          "id": "k8s-gpu-ex5",
+          "title": "Time-Slicing Configuration for Development Cluster",
+          "description": "Write the complete configuration to enable 4-way GPU time-slicing on a\nKubernetes cluster: (1) the device plugin ConfigMap with time-slicing\nsettings; (2) the Helm values for reinstalling the NVIDIA device plugin\nwith this config; (3) a sample Pod that requests one time-sliced GPU share;\n(4) a command to verify the node now advertises 4× the physical GPU count.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# Step 1: TODO — ConfigMap for time-slicing (4 replicas per GPU)\n\n---\n# Step 2: TODO — Helm install command for NVIDIA device plugin\n#   (as a comment showing the helm install command)\n\n---\n# Step 3: TODO — Pod requesting one time-sliced share\n\n---\n# Step 4: TODO — Verification command (as a comment)\n",
+          "test_cases": [
+            {
+              "input": "Check replicas",
+              "expected_output": "replicas: 4"
+            },
+            {
+              "input": "Check time slicing",
+              "expected_output": "timeSlicing"
+            },
+            {
+              "input": "Check pod GPU request",
+              "expected_output": "nvidia.com/gpu: 1"
+            },
+            {
+              "input": "Check ConfigMap kind",
+              "expected_output": "kind: ConfigMap"
+            }
+          ],
+          "hints": [
+            "The ConfigMap goes in kube-system or gpu-operator namespace.",
+            "With replicas: 4, an 8-GPU node advertises 32 nvidia.com/gpu.",
+            "Pods still request nvidia.com/gpu: 1 — they get a time-slice."
+          ],
+          "solution": "```yaml\n# Step 1: ConfigMap\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: device-plugin-config\n  namespace: gpu-operator\ndata:\n  config.yaml: |\n    version: v1\n    sharing:\n      timeSlicing:\n        renameByDefault: false\n        failRequestsGreaterThanOne: false\n        resources:\n          - name: nvidia.com/gpu\n            replicas: 4\n---\n# Step 2: Helm install\n# helm upgrade --install nvidia-device-plugin nvdp/nvidia-device-plugin \\\n#   --namespace gpu-operator \\\n#   --set config.name=device-plugin-config \\\n#   --set gfd.enabled=true\n---\n# Step 3: Pod\napiVersion: v1\nkind: Pod\nmetadata:\n  name: dev-notebook\nspec:\n  containers:\n    - name: notebook\n      image: quay.io/jupyter/pytorch-notebook:cuda12-latest\n      resources:\n        limits:\n          nvidia.com/gpu: 1\n---\n# Step 4: Verify (8 physical GPUs × 4 = 32 advertised)\n# kubectl get node gpu-node-01 -o jsonpath='{.status.capacity.nvidia\\.com/gpu}'\n# Expected: 32\n```\n"
+        }
+      ]
+    },
+    {
+      "id": "helm-deployments",
+      "title": "Helm Charts & Deployments",
+      "order": 5,
+      "objectives": [
+        "Understand Helm concepts: charts, values, templates, releases, and repositories",
+        "Create custom Helm charts with proper structure and best practices",
+        "Write Go templates with built-in functions, conditionals, and loops",
+        "Deploy ML platforms (JupyterHub, MLflow, Kubeflow) with Helm",
+        "Manage multiple releases with Helmfile"
+      ],
+      "content_md": "# Helm Charts & Deployments\n\n## 1. Why Helm?\n\nDeploying an ML platform on Kubernetes requires dozens of\ninterdependent YAML manifests: Deployments, Services, ConfigMaps,\nSecrets, PVCs, RBAC, Ingress. **Helm** is the package manager for\nKubernetes — it bundles manifests into reusable, version-controlled,\nparameterized **charts**.\n\n```\nWithout Helm              With Helm\n┌───────────────────┐    ┌───────────────────┐\n│ deployment.yaml   │    │ helm install       │\n│ service.yaml      │    │   mlflow           │\n│ configmap.yaml    │    │   bitnami/mlflow   │\n│ secret.yaml       │    │   --values prod.yaml│\n│ pvc.yaml          │    │                    │\n│ ingress.yaml      │    │ → creates all      │\n│ rbac.yaml         │    │   resources with   │\n│ hpa.yaml          │    │   proper config    │\n│ networkpolicy.yaml│    └───────────────────┘\n│ (apply each one)  │\n└───────────────────┘\n```\n\nKey benefits:\n- **Templating**: parameterize manifests with `values.yaml`\n- **Versioning**: track releases, rollback to previous versions\n- **Dependencies**: manage sub-charts and cross-chart dependencies\n- **Ecosystem**: thousands of community charts for popular software\n\n## 2. Helm Concepts\n\n| Concept       | Description                                      |\n|---------------|--------------------------------------------------|\n| **Chart**     | A package of Kubernetes manifests + metadata     |\n| **Values**    | Configuration parameters (values.yaml)           |\n| **Template**  | Manifest with Go template directives             |\n| **Release**   | An installed instance of a chart                 |\n| **Repository**| A hosted collection of charts                    |\n| **Revision**  | A version of a release (for rollback)            |\n\n```bash\n# Key Helm commands\nhelm repo add bitnami https://charts.bitnami.com/bitnami\nhelm repo update\nhelm search repo mlflow\nhelm install my-mlflow bitnami/mlflow --values custom.yaml\nhelm upgrade my-mlflow bitnami/mlflow --values custom.yaml\nhelm rollback my-mlflow 1\nhelm uninstall my-mlflow\nhelm list --all-namespaces\nhelm history my-mlflow\n```\n\n## 3. Chart Structure\n\n```\nmy-ml-platform/\n├── Chart.yaml            # Chart metadata (name, version, deps)\n├── Chart.lock            # Locked dependency versions\n├── values.yaml           # Default configuration values\n├── values.schema.json    # JSON Schema for values validation\n├── templates/\n│   ├── _helpers.tpl      # Reusable named templates\n│   ├── deployment.yaml   # Deployment template\n│   ├── service.yaml      # Service template\n│   ├── configmap.yaml    # ConfigMap template\n│   ├── secret.yaml       # Secret template\n│   ├── pvc.yaml          # PersistentVolumeClaim template\n│   ├── ingress.yaml      # Ingress template (optional)\n│   ├── hpa.yaml          # HorizontalPodAutoscaler (optional)\n│   ├── serviceaccount.yaml\n│   ├── NOTES.txt         # Post-install usage instructions\n│   └── tests/\n│       └── test-connection.yaml\n├── charts/               # Sub-chart dependencies\n└── .helmignore           # Files to ignore when packaging\n```\n\n### 3.1 Chart.yaml\n\n```yaml\napiVersion: v2\nname: ml-inference\ndescription: A Helm chart for deploying ML inference services\ntype: application\nversion: 1.2.0           # Chart version\nappVersion: \"2.1.0\"      # Application version\nkeywords:\n  - machine-learning\n  - inference\n  - gpu\nmaintainers:\n  - name: ML Platform Team\n    email: ml-platform@company.com\ndependencies:\n  - name: redis\n    version: \"18.x.x\"\n    repository: \"https://charts.bitnami.com/bitnami\"\n    condition: redis.enabled\n  - name: postgresql\n    version: \"14.x.x\"\n    repository: \"https://charts.bitnami.com/bitnami\"\n    condition: postgresql.enabled\n```\n\n### 3.2 values.yaml\n\n```yaml\n# values.yaml — Default configuration\nreplicaCount: 2\n\nimage:\n  repository: myregistry/triton-server\n  tag: \"24.01-py3\"\n  pullPolicy: IfNotPresent\n\nservice:\n  type: ClusterIP\n  ports:\n    http: 8000\n    grpc: 8001\n    metrics: 8002\n\nresources:\n  requests:\n    cpu: \"4\"\n    memory: \"16Gi\"\n  limits:\n    cpu: \"8\"\n    memory: \"32Gi\"\n    nvidia.com/gpu: 1\n\nmodelRepository:\n  storageType: pvc       # pvc, s3, or gcs\n  pvc:\n    name: model-store\n    mountPath: /models\n  s3:\n    bucket: \"\"\n    region: \"\"\n\nautoscaling:\n  enabled: true\n  minReplicas: 2\n  maxReplicas: 10\n  targetCPUUtilization: 70\n  targetGPUUtilization: 70\n\ningress:\n  enabled: false\n  className: nginx\n  hosts:\n    - host: inference.example.com\n      paths:\n        - path: /\n          pathType: Prefix\n\nredis:\n  enabled: true\n\npostgresql:\n  enabled: false\n```\n\n## 4. Template Language\n\nHelm uses Go's `text/template` engine with Sprig functions.\n\n### 4.1 Basic Templating\n\n```yaml\n# templates/deployment.yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: {{ include \"ml-inference.fullname\" . }}\n  labels:\n    {{- include \"ml-inference.labels\" . | nindent 4 }}\nspec:\n  {{- if not .Values.autoscaling.enabled }}\n  replicas: {{ .Values.replicaCount }}\n  {{- end }}\n  selector:\n    matchLabels:\n      {{- include \"ml-inference.selectorLabels\" . | nindent 6 }}\n  template:\n    metadata:\n      labels:\n        {{- include \"ml-inference.selectorLabels\" . | nindent 8 }}\n      annotations:\n        checksum/config: {{ include (print $.Template.BasePath \"/configmap.yaml\") . | sha256sum }}\n    spec:\n      containers:\n        - name: {{ .Chart.Name }}\n          image: \"{{ .Values.image.repository }}:{{ .Values.image.tag }}\"\n          imagePullPolicy: {{ .Values.image.pullPolicy }}\n          ports:\n            {{- range $name, $port := .Values.service.ports }}\n            - name: {{ $name }}\n              containerPort: {{ $port }}\n              protocol: TCP\n            {{- end }}\n          resources:\n            {{- toYaml .Values.resources | nindent 12 }}\n          {{- if eq .Values.modelRepository.storageType \"pvc\" }}\n          volumeMounts:\n            - name: model-store\n              mountPath: {{ .Values.modelRepository.pvc.mountPath }}\n          {{- end }}\n      {{- if eq .Values.modelRepository.storageType \"pvc\" }}\n      volumes:\n        - name: model-store\n          persistentVolumeClaim:\n            claimName: {{ .Values.modelRepository.pvc.name }}\n      {{- end }}\n```\n\n### 4.2 Helper Templates (_helpers.tpl)\n\n```yaml\n# templates/_helpers.tpl\n\n{{/*\nExpand the name of the chart.\n*/}}\n{{- define \"ml-inference.name\" -}}\n{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix \"-\" }}\n{{- end }}\n\n{{/*\nCreate a fully qualified app name.\n*/}}\n{{- define \"ml-inference.fullname\" -}}\n{{- if .Values.fullnameOverride }}\n{{- .Values.fullnameOverride | trunc 63 | trimSuffix \"-\" }}\n{{- else }}\n{{- $name := default .Chart.Name .Values.nameOverride }}\n{{- if contains $name .Release.Name }}\n{{- .Release.Name | trunc 63 | trimSuffix \"-\" }}\n{{- else }}\n{{- printf \"%s-%s\" .Release.Name $name | trunc 63 | trimSuffix \"-\" }}\n{{- end }}\n{{- end }}\n{{- end }}\n\n{{/*\nCommon labels\n*/}}\n{{- define \"ml-inference.labels\" -}}\nhelm.sh/chart: {{ include \"ml-inference.chart\" . }}\n{{ include \"ml-inference.selectorLabels\" . }}\napp.kubernetes.io/version: {{ .Chart.AppVersion | quote }}\napp.kubernetes.io/managed-by: {{ .Release.Service }}\n{{- end }}\n\n{{/*\nSelector labels\n*/}}\n{{- define \"ml-inference.selectorLabels\" -}}\napp.kubernetes.io/name: {{ include \"ml-inference.name\" . }}\napp.kubernetes.io/instance: {{ .Release.Name }}\n{{- end }}\n\n{{/*\nChart label\n*/}}\n{{- define \"ml-inference.chart\" -}}\n{{- printf \"%s-%s\" .Chart.Name .Chart.Version | replace \"+\" \"_\" | trunc 63 | trimSuffix \"-\" }}\n{{- end }}\n```\n\n### 4.3 Key Template Functions\n\n| Function        | Example                                      | Result            |\n|-----------------|----------------------------------------------|-------------------|\n| `default`       | `{{ default \"nginx\" .Values.class }}`        | \"nginx\" if empty  |\n| `quote`         | `{{ .Values.tag \\| quote }}`                  | `\"v1.0\"`          |\n| `upper`/`lower` | `{{ .Values.env \\| upper }}`                  | `PRODUCTION`      |\n| `trunc`         | `{{ .name \\| trunc 63 }}`                     | Limit to 63 chars |\n| `trimSuffix`    | `{{ .name \\| trimSuffix \"-\" }}`               | Remove trailing - |\n| `nindent`       | `{{ toYaml .data \\| nindent 4 }}`             | Indent 4 spaces   |\n| `toYaml`        | `{{ toYaml .Values.resources }}`              | YAML output       |\n| `sha256sum`     | `{{ .data \\| sha256sum }}`                    | SHA-256 hash      |\n| `b64enc`        | `{{ .secret \\| b64enc }}`                     | Base64 encode     |\n| `required`      | `{{ required \"msg\" .Values.key }}`            | Fail if missing   |\n| `ternary`       | `{{ ternary \"a\" \"b\" .Values.flag }}`          | If/else shorthand |\n\n### 4.4 Conditionals and Loops\n\n```yaml\n# Conditional inclusion\n{{- if .Values.ingress.enabled }}\napiVersion: networking.k8s.io/v1\nkind: Ingress\n# ...\n{{- end }}\n\n# Loops\n{{- range .Values.ingress.hosts }}\n- host: {{ .host | quote }}\n  http:\n    paths:\n      {{- range .paths }}\n      - path: {{ .path }}\n        pathType: {{ .pathType }}\n      {{- end }}\n{{- end }}\n\n# Named range with index\n{{- range $key, $value := .Values.env }}\n- name: {{ $key }}\n  value: {{ $value | quote }}\n{{- end }}\n```\n\n## 5. Deploying ML Platforms with Helm\n\n### 5.1 JupyterHub\n\n```bash\nhelm repo add jupyterhub https://hub.jupyter.org/helm-chart/\nhelm repo update\n\nhelm install jhub jupyterhub/jupyterhub \\\n    --namespace jupyter \\\n    --create-namespace \\\n    --values jupyterhub-values.yaml\n```\n\n```yaml\n# jupyterhub-values.yaml\nproxy:\n  service:\n    type: LoadBalancer\nsingleuser:\n  profileList:\n    - display_name: \"GPU Data Science\"\n      description: \"PyTorch + CUDA with 1 GPU\"\n      kubespawner_override:\n        image: quay.io/jupyter/pytorch-notebook:cuda12-latest\n        extra_resource_limits:\n          nvidia.com/gpu: \"1\"\n        extra_resource_guarantees:\n          cpu: \"4\"\n          memory: \"16Gi\"\n    - display_name: \"CPU Data Science\"\n      description: \"Standard data science environment\"\n      default: true\n      kubespawner_override:\n        image: quay.io/jupyter/datascience-notebook:latest\n  storage:\n    capacity: 50Gi\n    storageClass: fast-nvme\nhub:\n  config:\n    Authenticator:\n      admin_users: [\"admin\"]\n```\n\n### 5.2 MLflow\n\n```bash\nhelm repo add community-charts https://community-charts.github.io/helm-charts\nhelm install mlflow community-charts/mlflow \\\n    --namespace mlflow \\\n    --create-namespace \\\n    --set backendStore.postgres.enabled=true \\\n    --set backendStore.postgres.host=postgres.mlflow.svc \\\n    --set artifactRoot.s3.enabled=true \\\n    --set artifactRoot.s3.bucket=mlflow-artifacts\n```\n\n### 5.3 Kubeflow Training Operator\n\n```bash\nkubectl apply -k \"github.com/kubeflow/training-operator/manifests/overlays/standalone\"\n```\n\n## 6. Creating Custom Charts for HPC\n\n### 6.1 Scaffold and Customize\n\n```bash\nhelm create hpc-job-launcher\n```\n\n### 6.2 HPC-Specific Templates\n\n```yaml\n# templates/job.yaml — for batch HPC workloads\napiVersion: batch/v1\nkind: Job\nmetadata:\n  name: {{ include \"hpc-job-launcher.fullname\" . }}-{{ .Release.Revision }}\n  labels:\n    {{- include \"hpc-job-launcher.labels\" . | nindent 4 }}\nspec:\n  completions: {{ .Values.job.completions }}\n  parallelism: {{ .Values.job.parallelism }}\n  backoffLimit: {{ .Values.job.backoffLimit }}\n  ttlSecondsAfterFinished: {{ .Values.job.ttlSeconds }}\n  template:\n    spec:\n      restartPolicy: Never\n      {{- with .Values.nodeSelector }}\n      nodeSelector:\n        {{- toYaml . | nindent 8 }}\n      {{- end }}\n      {{- with .Values.tolerations }}\n      tolerations:\n        {{- toYaml . | nindent 8 }}\n      {{- end }}\n      containers:\n        - name: hpc-worker\n          image: \"{{ .Values.image.repository }}:{{ .Values.image.tag }}\"\n          command: {{ toYaml .Values.job.command | nindent 12 }}\n          resources:\n            {{- toYaml .Values.resources | nindent 12 }}\n          {{- if .Values.volumes.data.enabled }}\n          volumeMounts:\n            - name: data\n              mountPath: {{ .Values.volumes.data.mountPath }}\n              readOnly: {{ .Values.volumes.data.readOnly }}\n          {{- end }}\n      {{- if .Values.volumes.data.enabled }}\n      volumes:\n        - name: data\n          persistentVolumeClaim:\n            claimName: {{ .Values.volumes.data.pvcName }}\n      {{- end }}\n```\n\n## 7. Helmfile for Managing Multiple Releases\n\nWhen deploying an entire ML platform, you need multiple Helm charts\ncoordinated together. **Helmfile** manages this declaratively:\n\n```yaml\n# helmfile.yaml\nrepositories:\n  - name: nvidia\n    url: https://helm.ngc.nvidia.com/nvidia\n  - name: jupyterhub\n    url: https://hub.jupyter.org/helm-chart/\n  - name: prometheus\n    url: https://prometheus-community.github.io/helm-charts\n\nreleases:\n  - name: gpu-operator\n    namespace: gpu-operator\n    chart: nvidia/gpu-operator\n    version: \"24.3.0\"\n    values:\n      - gpu-operator-values.yaml\n\n  - name: prometheus\n    namespace: monitoring\n    chart: prometheus/kube-prometheus-stack\n    version: \"58.x.x\"\n    values:\n      - prometheus-values.yaml\n\n  - name: jupyterhub\n    namespace: jupyter\n    chart: jupyterhub/jupyterhub\n    version: \"3.3.x\"\n    values:\n      - jupyterhub-values.yaml\n    needs:\n      - gpu-operator/gpu-operator\n\n  - name: mlflow\n    namespace: mlflow\n    chart: community-charts/mlflow\n    version: \"0.10.x\"\n    values:\n      - mlflow-values.yaml\n```\n\n```bash\n# Apply all releases\nhelmfile apply\n\n# Diff before applying (shows what will change)\nhelmfile diff\n\n# Sync specific releases\nhelmfile -l name=jupyterhub apply\n\n# Destroy everything\nhelmfile destroy\n```\n\n## 8. Best Practices\n\n### 8.1 Chart Development\n\n```bash\n# Lint your chart\nhelm lint ./my-chart\n\n# Render templates locally (without installing)\nhelm template my-release ./my-chart --values test-values.yaml\n\n# Dry-run against the cluster\nhelm install my-release ./my-chart --dry-run --debug\n\n# Package for distribution\nhelm package ./my-chart\n```\n\n### 8.2 Production Checklist\n\n- [ ] Use `required` for mandatory values\n- [ ] Set default resource requests and limits\n- [ ] Include health check probes in Deployments\n- [ ] Add NOTES.txt with post-install instructions\n- [ ] Include chart tests (`templates/tests/`)\n- [ ] Use `.helmignore` to exclude unnecessary files\n- [ ] Pin dependency versions in Chart.lock\n- [ ] Use `values.schema.json` for validation\n",
+      "exercises": [
+        {
+          "id": "helm-ex1",
+          "title": "Create a Helm Chart values.yaml",
+          "description": "Write a complete values.yaml for a Helm chart that deploys an ML inference\nserver. Include settings for: image (nvcr.io/nvidia/tritonserver:24.01-py3),\n3 replicas, GPU resource limits (1 GPU, 8 CPU, 32Gi memory), service ports\n(http: 8000, grpc: 8001, metrics: 8002), PVC-based model repository at\n/models, autoscaling (min 2, max 10), and an optional ingress.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# values.yaml for ML Inference Helm Chart\n\n# TODO: Image configuration\n#   repository, tag, pullPolicy\n\n# TODO: Replica count\n\n# TODO: Service configuration\n#   type: ClusterIP\n#   ports: http (8000), grpc (8001), metrics (8002)\n\n# TODO: Resource requests and limits\n#   CPU, memory, GPU\n\n# TODO: Model repository configuration\n#   PVC-based, mount at /models\n\n# TODO: Autoscaling configuration\n#   enabled, min/max replicas, target utilization\n\n# TODO: Ingress configuration (disabled by default)\n",
+          "test_cases": [
+            {
+              "input": "Check image repo",
+              "expected_output": "nvcr.io/nvidia/tritonserver"
+            },
+            {
+              "input": "Check replicas",
+              "expected_output": "replicaCount: 3"
+            },
+            {
+              "input": "Check GPU resource",
+              "expected_output": "nvidia.com/gpu: 1"
+            },
+            {
+              "input": "Check autoscaling",
+              "expected_output": "enabled: true"
+            }
+          ],
+          "hints": [
+            "Group related settings into nested objects (image, service, resources).",
+            "Include both requests and limits for CPU and memory.",
+            "Make ingress disabled by default with 'enabled: false'."
+          ],
+          "solution": "```yaml\nreplicaCount: 3\n\nimage:\n  repository: nvcr.io/nvidia/tritonserver\n  tag: \"24.01-py3\"\n  pullPolicy: IfNotPresent\n\nservice:\n  type: ClusterIP\n  ports:\n    http: 8000\n    grpc: 8001\n    metrics: 8002\n\nresources:\n  requests:\n    cpu: \"8\"\n    memory: \"32Gi\"\n  limits:\n    cpu: \"8\"\n    memory: \"32Gi\"\n    nvidia.com/gpu: 1\n\nmodelRepository:\n  storageType: pvc\n  pvc:\n    name: model-store\n    mountPath: /models\n\nautoscaling:\n  enabled: true\n  minReplicas: 2\n  maxReplicas: 10\n  targetCPUUtilization: 70\n\ningress:\n  enabled: false\n  className: nginx\n  hosts:\n    - host: inference.example.com\n      paths:\n        - path: /\n          pathType: Prefix\n```\n"
+        },
+        {
+          "id": "helm-ex2",
+          "title": "Write Helm Template Helpers",
+          "description": "Write a _helpers.tpl file for a chart named 'ml-platform'. Include named\ntemplates for: (1) chart name (truncated to 63 chars); (2) fully qualified\nname using release name; (3) common labels (chart, selector labels, version,\nmanaged-by); (4) selector labels (name, instance); (5) a GPU resources\ntemplate that conditionally includes GPU limits.\n",
+          "exercise_type": "coding",
+          "difficulty": 4,
+          "starter_code": "{{/* templates/_helpers.tpl */}}\n\n{{/* TODO: Define \"ml-platform.name\" — chart name, truncated to 63 chars */}}\n\n{{/* TODO: Define \"ml-platform.fullname\" — release + chart name, 63 char limit */}}\n\n{{/* TODO: Define \"ml-platform.chart\" — chart name + version */}}\n\n{{/* TODO: Define \"ml-platform.labels\" — common labels */}}\n\n{{/* TODO: Define \"ml-platform.selectorLabels\" — selector labels only */}}\n\n{{/* TODO: Define \"ml-platform.gpuResources\" —\n     Conditionally include nvidia.com/gpu in resources\n     if .Values.gpu.enabled is true */}}\n",
+          "test_cases": [
+            {
+              "input": "Check name template",
+              "expected_output": "ml-platform.name"
+            },
+            {
+              "input": "Check fullname template",
+              "expected_output": "ml-platform.fullname"
+            },
+            {
+              "input": "Check labels template",
+              "expected_output": "ml-platform.labels"
+            },
+            {
+              "input": "Check GPU conditional",
+              "expected_output": "gpu.enabled"
+            }
+          ],
+          "hints": [
+            "Use 'define' and 'end' to create named templates.",
+            "Use trunc 63 and trimSuffix '-' for K8s name compliance.",
+            "Use {{- if .Values.gpu.enabled }} for conditional GPU resources."
+          ],
+          "solution": "```yaml\n{{/*\nChart name, truncated to 63 characters.\n*/}}\n{{- define \"ml-platform.name\" -}}\n{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix \"-\" }}\n{{- end }}\n\n{{/*\nFully qualified app name.\n*/}}\n{{- define \"ml-platform.fullname\" -}}\n{{- if .Values.fullnameOverride }}\n{{- .Values.fullnameOverride | trunc 63 | trimSuffix \"-\" }}\n{{- else }}\n{{- $name := default .Chart.Name .Values.nameOverride }}\n{{- if contains $name .Release.Name }}\n{{- .Release.Name | trunc 63 | trimSuffix \"-\" }}\n{{- else }}\n{{- printf \"%s-%s\" .Release.Name $name | trunc 63 | trimSuffix \"-\" }}\n{{- end }}\n{{- end }}\n{{- end }}\n\n{{/*\nChart label.\n*/}}\n{{- define \"ml-platform.chart\" -}}\n{{- printf \"%s-%s\" .Chart.Name .Chart.Version | replace \"+\" \"_\" | trunc 63 | trimSuffix \"-\" }}\n{{- end }}\n\n{{/*\nCommon labels.\n*/}}\n{{- define \"ml-platform.labels\" -}}\nhelm.sh/chart: {{ include \"ml-platform.chart\" . }}\n{{ include \"ml-platform.selectorLabels\" . }}\napp.kubernetes.io/version: {{ .Chart.AppVersion | quote }}\napp.kubernetes.io/managed-by: {{ .Release.Service }}\n{{- end }}\n\n{{/*\nSelector labels.\n*/}}\n{{- define \"ml-platform.selectorLabels\" -}}\napp.kubernetes.io/name: {{ include \"ml-platform.name\" . }}\napp.kubernetes.io/instance: {{ .Release.Name }}\n{{- end }}\n\n{{/*\nGPU resources — conditionally include GPU limits.\n*/}}\n{{- define \"ml-platform.gpuResources\" -}}\nrequests:\n  cpu: {{ .Values.resources.requests.cpu | quote }}\n  memory: {{ .Values.resources.requests.memory | quote }}\nlimits:\n  cpu: {{ .Values.resources.limits.cpu | quote }}\n  memory: {{ .Values.resources.limits.memory | quote }}\n  {{- if .Values.gpu.enabled }}\n  nvidia.com/gpu: {{ .Values.gpu.count }}\n  {{- end }}\n{{- end }}\n```\n"
+        },
+        {
+          "id": "helm-ex3",
+          "title": "Deploy JupyterHub with Custom Values",
+          "description": "Write a JupyterHub Helm values file that configures: (1) a LoadBalancer\nproxy service; (2) two singleuser profiles — \"GPU Data Science\" with 1 GPU\nand the pytorch-notebook image, and \"CPU Data Science\" (default) with the\ndatascience-notebook image; (3) 50Gi persistent storage per user with the\nfast-nvme StorageClass; (4) admin users list. Then show the helm install\ncommand.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# jupyterhub-values.yaml\n\n# TODO: Proxy service configuration (LoadBalancer)\n\n# TODO: Single user configuration\n#   - Profile list with GPU and CPU options\n#   - GPU profile: pytorch-notebook with cuda12, 1 GPU, 4 CPU, 16Gi\n#   - CPU profile: datascience-notebook (default)\n\n# TODO: User storage (50Gi, fast-nvme StorageClass)\n\n# TODO: Hub configuration with admin users\n\n# ---\n# TODO: Helm install command (as a comment)\n",
+          "test_cases": [
+            {
+              "input": "Check proxy type",
+              "expected_output": "LoadBalancer"
+            },
+            {
+              "input": "Check GPU profile",
+              "expected_output": "nvidia.com/gpu"
+            },
+            {
+              "input": "Check storage",
+              "expected_output": "50Gi"
+            },
+            {
+              "input": "Check storage class",
+              "expected_output": "fast-nvme"
+            }
+          ],
+          "hints": [
+            "Use singleuser.profileList for multiple environment options.",
+            "GPU resources go under kubespawner_override.extra_resource_limits.",
+            "Storage is configured under singleuser.storage."
+          ],
+          "solution": "```yaml\n# jupyterhub-values.yaml\nproxy:\n  service:\n    type: LoadBalancer\n\nsingleuser:\n  profileList:\n    - display_name: \"GPU Data Science\"\n      description: \"PyTorch + CUDA with 1 NVIDIA GPU\"\n      kubespawner_override:\n        image: quay.io/jupyter/pytorch-notebook:cuda12-latest\n        extra_resource_limits:\n          nvidia.com/gpu: \"1\"\n        extra_resource_guarantees:\n          cpu: \"4\"\n          memory: \"16Gi\"\n    - display_name: \"CPU Data Science\"\n      description: \"Standard data science environment\"\n      default: true\n      kubespawner_override:\n        image: quay.io/jupyter/datascience-notebook:latest\n        extra_resource_guarantees:\n          cpu: \"2\"\n          memory: \"8Gi\"\n  storage:\n    capacity: 50Gi\n    storageClass: fast-nvme\n\nhub:\n  config:\n    Authenticator:\n      admin_users:\n        - admin\n        - ml-lead\n\n# Install command:\n# helm install jhub jupyterhub/jupyterhub \\\n#   --namespace jupyter --create-namespace \\\n#   --values jupyterhub-values.yaml\n```\n"
+        },
+        {
+          "id": "helm-ex4",
+          "title": "Helmfile for ML Platform Stack",
+          "description": "Write a Helmfile that deploys a complete ML platform with four releases:\n(1) NVIDIA GPU Operator from nvidia repo; (2) Prometheus monitoring stack\nfrom prometheus-community; (3) JupyterHub from jupyterhub repo (depends on\nGPU operator); (4) MLflow from community-charts. Each release should\nreference its own values file and specify the correct namespace.\n",
+          "exercise_type": "coding",
+          "difficulty": 3,
+          "starter_code": "# helmfile.yaml — ML Platform Stack\n\n# TODO: Define Helm repositories\n#   nvidia, jupyterhub, prometheus-community, community-charts\n\n# TODO: Define releases\n#   1. gpu-operator (namespace: gpu-operator)\n#   2. prometheus (namespace: monitoring)\n#   3. jupyterhub (namespace: jupyter, depends on gpu-operator)\n#   4. mlflow (namespace: mlflow)\n",
+          "test_cases": [
+            {
+              "input": "Check repositories",
+              "expected_output": "repositories:"
+            },
+            {
+              "input": "Check GPU operator release",
+              "expected_output": "gpu-operator"
+            },
+            {
+              "input": "Check JupyterHub release",
+              "expected_output": "jupyterhub"
+            },
+            {
+              "input": "Check dependency",
+              "expected_output": "needs:"
+            }
+          ],
+          "hints": [
+            "Use 'needs:' to declare dependencies between releases.",
+            "Each release needs: name, namespace, chart, version, and values.",
+            "Repository URLs: nvidia=https://helm.ngc.nvidia.com/nvidia"
+          ],
+          "solution": "```yaml\nrepositories:\n  - name: nvidia\n    url: https://helm.ngc.nvidia.com/nvidia\n  - name: jupyterhub\n    url: https://hub.jupyter.org/helm-chart/\n  - name: prometheus-community\n    url: https://prometheus-community.github.io/helm-charts\n  - name: community-charts\n    url: https://community-charts.github.io/helm-charts\n\nreleases:\n  - name: gpu-operator\n    namespace: gpu-operator\n    chart: nvidia/gpu-operator\n    version: \"24.3.0\"\n    values:\n      - values/gpu-operator-values.yaml\n\n  - name: prometheus\n    namespace: monitoring\n    chart: prometheus-community/kube-prometheus-stack\n    version: \"58.7.2\"\n    values:\n      - values/prometheus-values.yaml\n\n  - name: jupyterhub\n    namespace: jupyter\n    chart: jupyterhub/jupyterhub\n    version: \"3.3.7\"\n    values:\n      - values/jupyterhub-values.yaml\n    needs:\n      - gpu-operator/gpu-operator\n\n  - name: mlflow\n    namespace: mlflow\n    chart: community-charts/mlflow\n    version: \"0.10.0\"\n    values:\n      - values/mlflow-values.yaml\n```\n"
+        },
+        {
+          "id": "helm-ex5",
+          "title": "HPC Batch Job Helm Chart Template",
+          "description": "Write a Helm template (templates/job.yaml) for an HPC batch job chart.\nThe template should create a Kubernetes Job with configurable completions,\nparallelism, backoff limit, and TTL. Include GPU resources (conditional on\n.Values.gpu.enabled), PVC volume mounts, node selector, and tolerations.\nUse proper helper template references for names and labels.\n",
+          "exercise_type": "coding",
+          "difficulty": 4,
+          "starter_code": "# templates/job.yaml — HPC Batch Job Template\n\n# TODO: Create a Job manifest using Helm templating\n#   - Use helper templates for name and labels\n#   - Configure completions, parallelism, backoffLimit from Values\n#   - Include TTL seconds after finished\n#   - Add nodeSelector and tolerations (with 'with' blocks)\n#   - Conditionally include GPU resources\n#   - Conditionally mount PVC volumes\n",
+          "test_cases": [
+            {
+              "input": "Check Job kind",
+              "expected_output": "kind: Job"
+            },
+            {
+              "input": "Check template reference",
+              "expected_output": "include"
+            },
+            {
+              "input": "Check completions",
+              "expected_output": ".Values.job.completions"
+            },
+            {
+              "input": "Check GPU conditional",
+              "expected_output": "gpu.enabled"
+            }
+          ],
+          "hints": [
+            "Use {{ include \"chart.fullname\" . }} for the job name.",
+            "Use {{- with .Values.nodeSelector }} for optional sections.",
+            "Use {{- if .Values.gpu.enabled }} to conditionally add GPU limits."
+          ],
+          "solution": "```yaml\napiVersion: batch/v1\nkind: Job\nmetadata:\n  name: {{ include \"hpc-job.fullname\" . }}-{{ .Release.Revision }}\n  labels:\n    {{- include \"hpc-job.labels\" . | nindent 4 }}\nspec:\n  completions: {{ .Values.job.completions }}\n  parallelism: {{ .Values.job.parallelism }}\n  backoffLimit: {{ .Values.job.backoffLimit | default 3 }}\n  ttlSecondsAfterFinished: {{ .Values.job.ttlSeconds | default 3600 }}\n  template:\n    metadata:\n      labels:\n        {{- include \"hpc-job.selectorLabels\" . | nindent 8 }}\n    spec:\n      restartPolicy: Never\n      {{- with .Values.nodeSelector }}\n      nodeSelector:\n        {{- toYaml . | nindent 10 }}\n      {{- end }}\n      {{- with .Values.tolerations }}\n      tolerations:\n        {{- toYaml . | nindent 10 }}\n      {{- end }}\n      containers:\n        - name: hpc-worker\n          image: \"{{ .Values.image.repository }}:{{ .Values.image.tag }}\"\n          {{- with .Values.job.command }}\n          command:\n            {{- toYaml . | nindent 16 }}\n          {{- end }}\n          resources:\n            requests:\n              cpu: {{ .Values.resources.requests.cpu | quote }}\n              memory: {{ .Values.resources.requests.memory | quote }}\n            limits:\n              cpu: {{ .Values.resources.limits.cpu | quote }}\n              memory: {{ .Values.resources.limits.memory | quote }}\n              {{- if .Values.gpu.enabled }}\n              nvidia.com/gpu: {{ .Values.gpu.count }}\n              {{- end }}\n          {{- if .Values.volumes.data.enabled }}\n          volumeMounts:\n            - name: data\n              mountPath: {{ .Values.volumes.data.mountPath }}\n              readOnly: {{ .Values.volumes.data.readOnly | default false }}\n          {{- end }}\n      {{- if .Values.volumes.data.enabled }}\n      volumes:\n        - name: data\n          persistentVolumeClaim:\n            claimName: {{ .Values.volumes.data.pvcName }}\n      {{- end }}\n```\n"
+        }
+      ]
+    }
+  ]
+}

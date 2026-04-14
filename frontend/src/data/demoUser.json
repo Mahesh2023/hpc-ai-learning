@@ -1,0 +1,16 @@
+{
+  "id": 1,
+  "username": "demo_engineer",
+  "email": "demo@hpcai.dev",
+  "level": "intermediate",
+  "total_score": 2750,
+  "current_streak": 12,
+  "skills": {
+    "linux": 78,
+    "hpc": 62,
+    "containers": 55,
+    "ai_ml": 45,
+    "platform_eng": 70,
+    "cloud": 58
+  }
+}
