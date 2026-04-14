@@ -3,6 +3,11 @@
 
 import DEMO_USER from './demoUser.json';
 import DEMO_MODULES from './modules.json';
+import { LESSON_EXERCISES } from './exerciseData';
+import { LESSON_EXERCISES_2 } from './exerciseData2';
+
+// Merge both exercise maps
+const ALL_EXERCISES = { ...LESSON_EXERCISES, ...LESSON_EXERCISES_2 };
 
 // ── Dashboard ──
 
@@ -106,6 +111,13 @@ In this lesson, you gained practical experience with ${lesson.title.toLowerCase(
 // ── Exercise Generator ──
 
 export function generateDemoExercises(lesson, lessonId) {
+  // Use expert-crafted exercises if available
+  const expertExercises = ALL_EXERCISES[Number(lessonId)];
+  if (expertExercises && expertExercises.length > 0) {
+    return expertExercises;
+  }
+
+  // Fallback for lessons without expert data
   const baseId = 100 + Number(lessonId);
   return [
     {
@@ -132,21 +144,6 @@ export function generateDemoExercises(lesson, lessonId) {
       ],
       hints: ['Start by reading the existing code and understanding what it does.', 'Make sure your function prints output and returns a value.', 'Check the test cases to see what output is expected.'],
       solution: `import os\nimport sys\n\ndef solve():\n    print("Hello from ${lesson.title}")\n    return True\n\nif __name__ == "__main__":\n    result = solve()\n    print(f"Result: {result}")`,
-    },
-    {
-      id: baseId + 2,
-      type: 'coding',
-      title: `${lesson.title} — System Analysis`,
-      description: 'Write code to detect and report system resources. This is a fundamental HPC skill — every production script should start with resource detection.',
-      points: 25,
-      starter_code: `# System Resource Detector\nimport os\nimport multiprocessing\n\ndef detect_resources():\n    """Detect available system resources.\n    \n    Return a dict with:\n    - cpu_count: number of CPUs\n    - hostname: system hostname\n    - pid: current process ID\n    """\n    # TODO: Implement this\n    pass\n\nresources = detect_resources()\nfor key, value in sorted(resources.items()):\n    print(f"{key}: {value}")`,
-      test_cases: [
-        { label: 'Contains cpu_count', input: '', expected_output: 'cpu_count:', hidden: false },
-        { label: 'Contains hostname', input: '', expected_output: 'hostname:', hidden: false },
-        { label: 'Contains pid', input: '', expected_output: 'pid:', hidden: true },
-      ],
-      hints: ['Use multiprocessing.cpu_count() for CPU count', 'os.uname().nodename gives the hostname', 'os.getpid() returns the current process ID'],
-      solution: `import os\nimport multiprocessing\n\ndef detect_resources():\n    return {\n        'cpu_count': multiprocessing.cpu_count(),\n        'hostname': os.uname().nodename,\n        'pid': os.getpid(),\n    }\n\nresources = detect_resources()\nfor key, value in sorted(resources.items()):\n    print(f"{key}: {value}")`,
     },
   ];
 }

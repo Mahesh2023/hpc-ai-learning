@@ -11,6 +11,8 @@ import {
   ChevronUp,
   Terminal,
   Play,
+  ArrowRight,
+  RotateCcw,
 } from 'lucide-react';
 import { submitExerciseAPI, runCodeAPI } from '../utils/api';
 import CodeEditor from './CodeEditor';
@@ -50,6 +52,158 @@ function getTypeConfig(type) {
     case 'lab': return { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)', icon: Terminal, label: 'Lab' };
     default: return { color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.1)', icon: HelpCircle, label: type };
   }
+}
+
+function LabExercise({ exercise, onComplete }) {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [stepResults, setStepResults] = useState({});
+  const [userCode, setUserCode] = useState({});
+  const [running, setRunning] = useState(false);
+  const [showHints, setShowHints] = useState({});
+
+  const steps = exercise.steps || [];
+  const completedCount = Object.values(stepResults).filter(r => r?.passed).length;
+  const allDone = completedCount === steps.length;
+
+  const runStep = async (idx) => {
+    const step = steps[idx];
+    const code = userCode[idx] !== undefined ? userCode[idx] : (step.command || '');
+    if (!code.trim()) return;
+    setRunning(true);
+    try {
+      const result = await runCodeAPI(step.language || 'bash', code);
+      let passed = false;
+      if (step.validation === 'any_output') {
+        passed = result && (result.stdout || '').trim().length > 0 && result.exit_code === 0;
+      } else if (step.validation === 'no_error') {
+        passed = result && result.exit_code === 0;
+      } else if (step.expected_output) {
+        const actual = (result?.stdout || '').trim().toLowerCase();
+        passed = actual.includes(step.expected_output.trim().toLowerCase());
+      } else {
+        passed = result && result.exit_code === 0;
+      }
+      setStepResults(prev => ({ ...prev, [idx]: { ...result, passed, failed: !passed } }));
+      if (passed && idx === currentStep && idx < steps.length - 1) {
+        setTimeout(() => setCurrentStep(idx + 1), 400);
+      }
+      if (passed && completedCount + 1 === steps.length && onComplete) {
+        setTimeout(() => onComplete(exercise.points), 600);
+      }
+    } catch {
+      // Demo fallback
+      const demoOut = step.demo_output || `$ ${code.split('\n')[0]}\n[simulated output]`;
+      setStepResults(prev => ({ ...prev, [idx]: { stdout: demoOut, stderr: '', exit_code: 0, passed: true, failed: false, demo: true } }));
+      if (idx === currentStep && idx < steps.length - 1) {
+        setTimeout(() => setCurrentStep(idx + 1), 400);
+      }
+      if (completedCount + 1 === steps.length && onComplete) {
+        setTimeout(() => onComplete(exercise.points), 600);
+      }
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: '0.75rem' }}>
+      {/* Progress */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        <Terminal size={14} color="#8b5cf6" />
+        <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#a78bfa' }}>{completedCount}/{steps.length} steps</span>
+        <div style={{ flex: 1, height: '3px', background: '#1e293b', borderRadius: '2px' }}>
+          <div style={{ height: '100%', width: `${(completedCount / Math.max(steps.length, 1)) * 100}%`, background: 'linear-gradient(90deg, #8b5cf6, #06b6d4)', borderRadius: '2px', transition: 'width 400ms ease' }} />
+        </div>
+        {allDone && <CheckCircle2 size={14} color="#10b981" />}
+      </div>
+
+      {/* Steps */}
+      {steps.map((step, idx) => {
+        const result = stepResults[idx];
+        const isDone = result?.passed;
+        const isFailed = result?.failed;
+        const isActive = idx <= currentStep;
+        const code = userCode[idx] !== undefined ? userCode[idx] : (step.command || '');
+
+        return (
+          <div key={idx} style={{ marginBottom: '0.5rem', borderRadius: '8px', border: `1px solid ${isDone ? 'rgba(16,185,129,0.25)' : isFailed ? 'rgba(239,68,68,0.25)' : idx === currentStep ? 'rgba(139,92,246,0.3)' : '#1e293b'}`, background: '#0f172a', opacity: isActive ? 1 : 0.4, transition: 'all 250ms' }}>
+            {/* Step header */}
+            <div style={{ padding: '0.5rem 0.625rem', display: 'flex', alignItems: 'center', gap: '0.375rem', cursor: isActive ? 'pointer' : 'default' }}
+              onClick={() => isActive && setCurrentStep(idx)}>
+              {isDone ? <CheckCircle2 size={14} color="#10b981" /> : <div style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${idx === currentStep ? '#8b5cf6' : '#334155'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.5rem', color: '#64748b', fontWeight: '700' }}>{idx + 1}</div>}
+              <span style={{ fontSize: '0.75rem', fontWeight: '600', color: isDone ? '#10b981' : idx === currentStep ? '#f1f5f9' : '#64748b' }}>{step.title}</span>
+            </div>
+
+            {/* Expanded step */}
+            {idx === currentStep && (
+              <div style={{ padding: '0 0.625rem 0.625rem' }}>
+                <p style={{ fontSize: '0.75rem', color: '#94a3b8', lineHeight: '1.6', marginBottom: '0.375rem' }}>{step.instruction}</p>
+
+                <textarea
+                  value={code}
+                  onChange={(e) => setUserCode(prev => ({ ...prev, [idx]: e.target.value }))}
+                  spellCheck={false}
+                  disabled={isDone}
+                  style={{ width: '100%', minHeight: '50px', padding: '0.375rem 0.5rem', fontFamily: "'JetBrains Mono', monospace", fontSize: '0.6875rem', lineHeight: '1.4', color: '#e2e8f0', background: '#0d1117', border: '1px solid #1e293b', borderRadius: '6px', resize: 'vertical', outline: 'none' }}
+                />
+
+                <div style={{ display: 'flex', gap: '0.375rem', marginTop: '0.375rem', alignItems: 'center' }}>
+                  {!isDone && (
+                    <button onClick={() => runStep(idx)} disabled={running}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.625rem', fontSize: '0.75rem', fontWeight: '600', background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '6px', cursor: running ? 'not-allowed' : 'pointer', opacity: running ? 0.6 : 1 }}>
+                      {running ? 'Running...' : <><Play size={12} />Run & Verify</>}
+                    </button>
+                  )}
+                  {isFailed && (
+                    <button onClick={() => { setStepResults(prev => { const n = { ...prev }; delete n[idx]; return n; }); }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.625rem', fontSize: '0.75rem', fontWeight: '600', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '6px', cursor: 'pointer' }}>
+                      <RotateCcw size={12} />Retry
+                    </button>
+                  )}
+                  {step.hint && (
+                    <button onClick={() => setShowHints(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.25rem 0.5rem', fontSize: '0.6875rem', background: 'transparent', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '6px', cursor: 'pointer' }}>
+                      <Lightbulb size={10} />Hint
+                    </button>
+                  )}
+                </div>
+
+                {showHints[idx] && step.hint && (
+                  <div style={{ marginTop: '0.25rem', padding: '0.375rem 0.5rem', borderRadius: '6px', background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.1)', fontSize: '0.6875rem', color: '#fbbf24', lineHeight: '1.5' }}>
+                    {step.hint}
+                  </div>
+                )}
+
+                {result && (
+                  <div style={{ marginTop: '0.25rem' }}>
+                    <pre style={{ padding: '0.375rem 0.5rem', background: '#0d1117', border: `1px solid ${result.passed ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'}`, borderRadius: '6px', fontFamily: 'monospace', fontSize: '0.625rem', lineHeight: '1.3', color: '#e2e8f0', whiteSpace: 'pre-wrap', maxHeight: '100px', overflow: 'auto' }}>
+                      {result.stdout}{result.stderr && <span style={{ color: '#fca5a5' }}>{result.stderr}</span>}
+                    </pre>
+                    {result.passed && step.explanation && (
+                      <div style={{ marginTop: '0.25rem', padding: '0.375rem 0.5rem', borderRadius: '6px', background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.1)', fontSize: '0.625rem', color: '#67e8f9', lineHeight: '1.5' }}>
+                        {step.explanation}
+                      </div>
+                    )}
+                    {result.demo && (
+                      <div style={{ fontSize: '0.5625rem', color: '#475569', fontStyle: 'italic', marginTop: '0.125rem' }}>(simulated output)</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {allDone && (
+        <div style={{ marginTop: '0.5rem', padding: '0.625rem', borderRadius: '8px', background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.2)', textAlign: 'center' }}>
+          <CheckCircle2 size={18} color="#10b981" style={{ margin: '0 auto 0.25rem' }} />
+          <div style={{ fontSize: '0.8125rem', fontWeight: '700', color: '#10b981' }}>Lab Complete!</div>
+          <div style={{ fontSize: '0.625rem', color: '#64748b', marginTop: '0.125rem' }}>+{exercise.points} points earned</div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ExerciseItem({ exercise }) {
@@ -182,7 +336,10 @@ function ExerciseItem({ exercise }) {
             </>
           )}
 
-          {exercise.type === 'lab' && (
+          {exercise.type === 'lab' && exercise.steps && (
+            <LabExercise exercise={exercise} onComplete={(score) => { setResult({ correct: true, score, feedback: 'Lab completed!' }); setSubmitted(true); }} />
+          )}
+          {exercise.type === 'lab' && !exercise.steps && (
             <div style={{ padding: '1rem', borderRadius: '10px', background: 'rgba(139,92,246,0.05)', border: '1px solid rgba(139,92,246,0.15)', fontSize: '0.875rem', color: '#94a3b8', lineHeight: '1.7' }}>
               <p style={{ marginBottom: '0.5rem', fontWeight: '600', color: '#a78bfa' }}>Lab Instructions:</p>
               <p>{exercise.description}</p>
