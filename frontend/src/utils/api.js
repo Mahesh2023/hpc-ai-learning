@@ -31,11 +31,11 @@ const DEMO_MODULES = [
     skills: ['Linux', 'Bash', 'System Admin'],
     prerequisites: [],
     lessons: [
-      { id: 1, title: 'Introduction to the Linux Shell', order_index: 1, estimated_minutes: 45, objectives: ['Understand shell basics', 'Navigate the filesystem', 'Use basic commands'], exercise_count: 3, completed: true },
-      { id: 2, title: 'File System & Permissions', order_index: 2, estimated_minutes: 60, objectives: ['Understand Linux file hierarchy', 'Manage file permissions', 'Use chmod and chown'], exercise_count: 4, completed: true },
-      { id: 3, title: 'Shell Scripting Fundamentals', order_index: 3, estimated_minutes: 90, objectives: ['Write bash scripts', 'Use variables and loops', 'Handle arguments'], exercise_count: 5, completed: false },
-      { id: 4, title: 'Process Management & Monitoring', order_index: 4, estimated_minutes: 60, objectives: ['Manage processes', 'Use top/htop', 'Understand signals'], exercise_count: 3, completed: false },
-      { id: 5, title: 'Networking Basics', order_index: 5, estimated_minutes: 75, objectives: ['Understand TCP/IP', 'Use SSH effectively', 'Network troubleshooting'], exercise_count: 4, completed: false },
+      { id: 1, slug: 'linux-cli', title: 'Introduction to the Linux Shell', order_index: 1, estimated_minutes: 45, objectives: ['Understand shell basics', 'Navigate the filesystem', 'Use basic commands'], exercise_count: 3, completed: true },
+      { id: 2, slug: 'linux-cli', title: 'File System & Permissions', order_index: 2, estimated_minutes: 60, objectives: ['Understand Linux file hierarchy', 'Manage file permissions', 'Use chmod and chown'], exercise_count: 4, completed: true },
+      { id: 3, slug: 'shell-scripting', title: 'Shell Scripting Fundamentals', order_index: 3, estimated_minutes: 90, objectives: ['Write bash scripts', 'Use variables and loops', 'Handle arguments'], exercise_count: 5, completed: false },
+      { id: 4, slug: 'python-infra', title: 'Process Management & Monitoring', order_index: 4, estimated_minutes: 60, objectives: ['Manage processes', 'Use top/htop', 'Understand signals'], exercise_count: 3, completed: false },
+      { id: 5, slug: 'networking', title: 'Networking Basics', order_index: 5, estimated_minutes: 75, objectives: ['Understand TCP/IP', 'Use SSH effectively', 'Network troubleshooting'], exercise_count: 4, completed: false },
     ],
     completion_percentage: 40,
     status: 'in_progress',
@@ -50,10 +50,10 @@ const DEMO_MODULES = [
     skills: ['HPC', 'SLURM', 'MPI', 'Parallel Computing'],
     prerequisites: ['Linux & Command Line Mastery'],
     lessons: [
-      { id: 6, title: 'HPC Architecture Overview', order_index: 1, estimated_minutes: 60, objectives: ['Understand cluster architecture', 'Learn about interconnects', 'Know compute vs storage nodes'], exercise_count: 3, completed: true },
-      { id: 7, title: 'Introduction to SLURM', order_index: 2, estimated_minutes: 90, objectives: ['Submit jobs with sbatch', 'Monitor jobs with squeue', 'Configure job resources'], exercise_count: 5, completed: false },
-      { id: 8, title: 'Parallel Computing with MPI', order_index: 3, estimated_minutes: 120, objectives: ['Understand message passing', 'Write basic MPI programs', 'Run multi-node jobs'], exercise_count: 4, completed: false },
-      { id: 9, title: 'GPU Computing Basics', order_index: 4, estimated_minutes: 90, objectives: ['Understand GPU architecture', 'CUDA fundamentals', 'GPU job scheduling'], exercise_count: 4, completed: false },
+      { id: 6, slug: 'cluster-architecture', title: 'HPC Architecture Overview', order_index: 1, estimated_minutes: 60, objectives: ['Understand cluster architecture', 'Learn about interconnects', 'Know compute vs storage nodes'], exercise_count: 3, completed: true },
+      { id: 7, slug: 'slurm-fundamentals', title: 'Introduction to SLURM', order_index: 2, estimated_minutes: 90, objectives: ['Submit jobs with sbatch', 'Monitor jobs with squeue', 'Configure job resources'], exercise_count: 5, completed: false },
+      { id: 8, slug: 'mpi-programming', title: 'Parallel Computing with MPI', order_index: 3, estimated_minutes: 120, objectives: ['Understand message passing', 'Write basic MPI programs', 'Run multi-node jobs'], exercise_count: 4, completed: false },
+      { id: 9, slug: 'gpu-cuda-fundamentals', title: 'GPU Computing Basics', order_index: 4, estimated_minutes: 90, objectives: ['Understand GPU architecture', 'CUDA fundamentals', 'GPU job scheduling'], exercise_count: 4, completed: false },
     ],
     completion_percentage: 25,
     status: 'in_progress',
@@ -68,10 +68,10 @@ const DEMO_MODULES = [
     skills: ['Docker', 'Singularity', 'Kubernetes', 'Container Security'],
     prerequisites: ['Linux & Command Line Mastery', 'HPC Fundamentals & Job Scheduling'],
     lessons: [
-      { id: 10, title: 'Docker Fundamentals', order_index: 1, estimated_minutes: 90, objectives: ['Build Docker images', 'Manage containers', 'Docker networking'], exercise_count: 5, completed: false },
-      { id: 11, title: 'Singularity for HPC', order_index: 2, estimated_minutes: 75, objectives: ['Build Singularity containers', 'Run on HPC clusters', 'GPU passthrough'], exercise_count: 4, completed: false },
-      { id: 12, title: 'Kubernetes Architecture', order_index: 3, estimated_minutes: 90, objectives: ['Understand K8s components', 'Deploy applications', 'Service discovery'], exercise_count: 4, completed: false },
-      { id: 13, title: 'K8s for AI Workloads', order_index: 4, estimated_minutes: 120, objectives: ['GPU scheduling in K8s', 'Helm charts', 'Resource management'], exercise_count: 5, completed: false },
+      { id: 10, slug: 'docker-fundamentals', title: 'Docker Fundamentals', order_index: 1, estimated_minutes: 90, objectives: ['Build Docker images', 'Manage containers', 'Docker networking'], exercise_count: 5, completed: false },
+      { id: 11, slug: 'singularity-apptainer', title: 'Singularity for HPC', order_index: 2, estimated_minutes: 75, objectives: ['Build Singularity containers', 'Run on HPC clusters', 'GPU passthrough'], exercise_count: 4, completed: false },
+      { id: 12, slug: 'kubernetes-core', title: 'Kubernetes Architecture', order_index: 3, estimated_minutes: 90, objectives: ['Understand K8s components', 'Deploy applications', 'Service discovery'], exercise_count: 4, completed: false },
+      { id: 13, slug: 'kubernetes-gpu', title: 'K8s for AI Workloads', order_index: 4, estimated_minutes: 120, objectives: ['GPU scheduling in K8s', 'Helm charts', 'Resource management'], exercise_count: 5, completed: false },
     ],
     completion_percentage: 0,
     status: 'available',
@@ -86,10 +86,10 @@ const DEMO_MODULES = [
     skills: ['PyTorch', 'TensorFlow', 'Distributed Training', 'MLOps'],
     prerequisites: ['Containers & Orchestration'],
     lessons: [
-      { id: 14, title: 'ML Framework Environments', order_index: 1, estimated_minutes: 60, objectives: ['Set up PyTorch/TF environments', 'Manage CUDA versions', 'Virtual environments'], exercise_count: 3, completed: false },
-      { id: 15, title: 'Distributed Training', order_index: 2, estimated_minutes: 120, objectives: ['Data parallelism', 'Model parallelism', 'Multi-GPU training'], exercise_count: 5, completed: false },
-      { id: 16, title: 'Model Serving & Inference', order_index: 3, estimated_minutes: 90, objectives: ['TorchServe/TF Serving', 'Triton Inference Server', 'Optimization'], exercise_count: 4, completed: false },
-      { id: 17, title: 'MLOps Pipelines', order_index: 4, estimated_minutes: 90, objectives: ['CI/CD for ML', 'Experiment tracking', 'Model registry'], exercise_count: 4, completed: false },
+      { id: 14, slug: 'ml-frameworks', title: 'ML Framework Environments', order_index: 1, estimated_minutes: 60, objectives: ['Set up PyTorch/TF environments', 'Manage CUDA versions', 'Virtual environments'], exercise_count: 3, completed: false },
+      { id: 15, slug: 'distributed-training', title: 'Distributed Training', order_index: 2, estimated_minutes: 120, objectives: ['Data parallelism', 'Model parallelism', 'Multi-GPU training'], exercise_count: 5, completed: false },
+      { id: 16, slug: 'model-serving', title: 'Model Serving & Inference', order_index: 3, estimated_minutes: 90, objectives: ['TorchServe/TF Serving', 'Triton Inference Server', 'Optimization'], exercise_count: 4, completed: false },
+      { id: 17, slug: 'mlops-pipelines', title: 'MLOps Pipelines', order_index: 4, estimated_minutes: 90, objectives: ['CI/CD for ML', 'Experiment tracking', 'Model registry'], exercise_count: 4, completed: false },
     ],
     completion_percentage: 0,
     status: 'locked',
@@ -104,10 +104,10 @@ const DEMO_MODULES = [
     skills: ['Terraform', 'GitOps', 'Observability', 'Platform Design'],
     prerequisites: ['Containers & Orchestration', 'AI/ML Infrastructure & Frameworks'],
     lessons: [
-      { id: 18, title: 'Infrastructure as Code', order_index: 1, estimated_minutes: 90, objectives: ['Terraform for HPC', 'Ansible automation', 'State management'], exercise_count: 5, completed: false },
-      { id: 19, title: 'GitOps & ArgoCD', order_index: 2, estimated_minutes: 90, objectives: ['GitOps principles', 'ArgoCD setup', 'Declarative infrastructure'], exercise_count: 4, completed: false },
-      { id: 20, title: 'Observability Stack', order_index: 3, estimated_minutes: 120, objectives: ['Prometheus/Grafana', 'GPU metrics', 'Alerting'], exercise_count: 5, completed: false },
-      { id: 21, title: 'Self-Service Platforms', order_index: 4, estimated_minutes: 90, objectives: ['Backstage/Port', 'Service catalogs', 'Developer experience'], exercise_count: 3, completed: false },
+      { id: 18, slug: 'infrastructure-as-code', title: 'Infrastructure as Code', order_index: 1, estimated_minutes: 90, objectives: ['Terraform for HPC', 'Ansible automation', 'State management'], exercise_count: 5, completed: false },
+      { id: 19, slug: 'gitops-argocd', title: 'GitOps & ArgoCD', order_index: 2, estimated_minutes: 90, objectives: ['GitOps principles', 'ArgoCD setup', 'Declarative infrastructure'], exercise_count: 4, completed: false },
+      { id: 20, slug: 'observability-stack', title: 'Observability Stack', order_index: 3, estimated_minutes: 120, objectives: ['Prometheus/Grafana', 'GPU metrics', 'Alerting'], exercise_count: 5, completed: false },
+      { id: 21, slug: 'self-service-platforms', title: 'Self-Service Platforms', order_index: 4, estimated_minutes: 90, objectives: ['Backstage/Port', 'Service catalogs', 'Developer experience'], exercise_count: 3, completed: false },
     ],
     completion_percentage: 0,
     status: 'locked',
@@ -122,10 +122,10 @@ const DEMO_MODULES = [
     skills: ['Security', 'Multi-tenancy', 'Cost Optimization', 'LLM Ops'],
     prerequisites: ['Platform Engineering for AI'],
     lessons: [
-      { id: 22, title: 'Multi-tenant AI Platforms', order_index: 1, estimated_minutes: 120, objectives: ['Namespace isolation', 'Resource quotas', 'Fair scheduling'], exercise_count: 4, completed: false },
-      { id: 23, title: 'Security & Compliance', order_index: 2, estimated_minutes: 90, objectives: ['RBAC', 'Network policies', 'Data governance'], exercise_count: 4, completed: false },
-      { id: 24, title: 'Cost Optimization', order_index: 3, estimated_minutes: 90, objectives: ['GPU utilization', 'Spot instances', 'Chargeback models'], exercise_count: 3, completed: false },
-      { id: 25, title: 'Large-Scale LLM Deployment', order_index: 4, estimated_minutes: 150, objectives: ['LLM serving patterns', 'vLLM/TGI', 'RAG infrastructure'], exercise_count: 5, completed: false },
+      { id: 22, slug: 'multi-tenant-platforms', title: 'Multi-tenant AI Platforms', order_index: 1, estimated_minutes: 120, objectives: ['Namespace isolation', 'Resource quotas', 'Fair scheduling'], exercise_count: 4, completed: false },
+      { id: 23, slug: 'security-compliance', title: 'Security & Compliance', order_index: 2, estimated_minutes: 90, objectives: ['RBAC', 'Network policies', 'Data governance'], exercise_count: 4, completed: false },
+      { id: 24, slug: 'cost-optimization', title: 'Cost Optimization', order_index: 3, estimated_minutes: 90, objectives: ['GPU utilization', 'Spot instances', 'Chargeback models'], exercise_count: 3, completed: false },
+      { id: 25, slug: 'llm-deployment', title: 'Large-Scale LLM Deployment', order_index: 4, estimated_minutes: 150, objectives: ['LLM serving patterns', 'vLLM/TGI', 'RAG infrastructure'], exercise_count: 5, completed: false },
     ],
     completion_percentage: 0,
     status: 'locked',
@@ -527,6 +527,130 @@ export async function getModuleAPI(id) {
   return DEMO_MODULES.find((m) => m.id === Number(id)) || null;
 }
 
+// Rich demo content for static deployment — maps lesson slugs to interactive components
+const DEMO_INTERACTIVE_CONTENT = {
+  'linux-cli': ':::interactive{component="GuidedLab" config=\'{"preset":"linux-files"}\'}',
+  'python-infra': ':::interactive{component="GuidedLab" config=\'{"preset":"python-hpc"}\'}',
+  'networking': ':::interactive{component="NetworkTopologyViewer"}',
+  'shell-scripting': ':::interactive{component="ProcessSchedulerViz"}',
+  'cluster-architecture': ':::interactive{component="NetworkTopologyViewer"}',
+  'slurm-fundamentals': ':::interactive{component="SlurmSimulator"}',
+  'mpi-programming': ':::interactive{component="MPIVisualizer"}',
+  'hpc-storage': ':::interactive{component="StorageStripingSimulator"}',
+  'benchmarking': ':::interactive{component="StorageStripingSimulator"}',
+  'docker-fundamentals': ':::interactive{component="DockerLayerVisualizer"}',
+  'singularity-apptainer': ':::interactive{component="DockerLayerVisualizer"}',
+  'gpu-cuda-fundamentals': ':::interactive{component="GPUMemoryVisualizer"}',
+  'distributed-training': ':::interactive{component="MPIVisualizer"}',
+  'data-pipeline-engineering': ':::interactive{component="StorageStripingSimulator"}',
+};
+
+function generateDemoLessonContent(lesson, interactiveContent) {
+  const objectives = lesson.objectives?.map(o => `- ${o}`).join('\n') || '';
+  return `# ${lesson.title}
+
+## Overview
+
+This lesson provides **hands-on, practical training** in ${lesson.title.toLowerCase()}. You'll work through interactive exercises, run real code, and build skills directly applicable to production HPC systems.
+
+### Learning Objectives
+
+${objectives}
+
+---
+
+## Interactive Lab
+
+Use the interactive component below to explore the concepts hands-on. Experiment with different configurations to build intuition.
+
+${interactiveContent}
+
+---
+
+## Key Concepts
+
+${lesson.objectives?.map((o, i) => `### ${i + 1}. ${o}
+
+This is a core skill you'll need on production HPC systems. The interactive exercises in the sidebar will test your understanding with real code challenges.
+
+`).join('') || ''}
+
+## Practical Application
+
+\`\`\`python
+# Real-world example for ${lesson.title}
+import os
+import sys
+
+def main():
+    """
+    Practical ${lesson.title.toLowerCase()} implementation.
+    Modify this code and click 'Run' to see the results.
+    """
+    print(f"System: {os.uname().sysname} {os.uname().release}")
+    print(f"Python: {sys.version.split()[0]}")
+    print(f"Working on: ${lesson.title}")
+    # Add your implementation here
+
+if __name__ == "__main__":
+    main()
+\`\`\`
+
+> **Pro tip:** Complete all exercises in the sidebar panel to earn full marks. Each exercise tests a specific skill you'll use in production.
+
+## Summary
+
+In this lesson, you gained practical experience with ${lesson.title.toLowerCase()}. The interactive simulations and coding exercises above mirror real HPC workflows. Continue to the next lesson to build on these skills.
+`;
+}
+
+function generateDemoExercises(lesson, lessonId) {
+  const baseId = 100 + Number(lessonId);
+  const exercises = [
+    {
+      id: baseId,
+      type: 'quiz',
+      title: `${lesson.title} — Concept Check`,
+      description: 'Test your understanding of the core concepts.',
+      points: 10,
+      question: `Which of the following is a key concept in ${lesson.title}?`,
+      options: (lesson.objectives || []).slice(0, 4).map(o => o.substring(0, 60)),
+      correct_answer: 0,
+      hints: ['Review the learning objectives at the top of this lesson.', 'Think about which concept is most fundamental to this topic.'],
+    },
+    {
+      id: baseId + 1,
+      type: 'coding',
+      title: `${lesson.title} — Coding Challenge`,
+      description: `Write a Python function that demonstrates a key concept from ${lesson.title.toLowerCase()}. Your code should print results that can be verified.`,
+      points: 25,
+      starter_code: `# ${lesson.title} — Coding Challenge\n# Write your solution below\nimport os\nimport sys\n\ndef solve():\n    """Implement your solution here."""\n    # TODO: Your code here\n    print("Hello from ${lesson.title}")\n    return True\n\nif __name__ == "__main__":\n    result = solve()\n    print(f"Result: {result}")`,
+      test_cases: [
+        { label: 'Test 1: Function runs', input: '', expected_output: 'Hello from', hidden: false },
+        { label: 'Test 2: Returns True', input: '', expected_output: 'Result: True', hidden: false },
+      ],
+      hints: ['Start by reading the existing code and understanding what it does.', 'Make sure your function prints output and returns a value.', 'Check the test cases to see what output is expected.'],
+      solution: `import os\nimport sys\n\ndef solve():\n    print("Hello from ${lesson.title}")\n    return True\n\nif __name__ == "__main__":\n    result = solve()\n    print(f"Result: {result}")`,
+    },
+    {
+      id: baseId + 2,
+      type: 'coding',
+      title: `${lesson.title} — System Analysis`,
+      description: 'Write code to detect and report system resources. This is a fundamental HPC skill — every production script should start with resource detection.',
+      points: 25,
+      starter_code: `# System Resource Detector\nimport os\nimport multiprocessing\n\ndef detect_resources():\n    """Detect available system resources.\n    \n    Return a dict with:\n    - cpu_count: number of CPUs\n    - hostname: system hostname\n    - pid: current process ID\n    """\n    # TODO: Implement this\n    pass\n\nresources = detect_resources()\nfor key, value in sorted(resources.items()):\n    print(f"{key}: {value}")`,
+      test_cases: [
+        { label: 'Contains cpu_count', input: '', expected_output: 'cpu_count:', hidden: false },
+        { label: 'Contains hostname', input: '', expected_output: 'hostname:', hidden: false },
+        { label: 'Contains pid', input: '', expected_output: 'pid:', hidden: true },
+      ],
+      hints: ['Use multiprocessing.cpu_count() for CPU count', 'os.uname().nodename gives the hostname', 'os.getpid() returns the current process ID'],
+      solution: `import os\nimport multiprocessing\n\ndef detect_resources():\n    return {\n        'cpu_count': multiprocessing.cpu_count(),\n        'hostname': os.uname().nodename,\n        'pid': os.getpid(),\n    }\n\nresources = detect_resources()\nfor key, value in sorted(resources.items()):\n    print(f"{key}: {value}")`,
+    },
+  ];
+  return exercises;
+}
+
 // Lessons API
 
 export async function getLessonAPI(moduleId, lessonId) {
@@ -536,23 +660,13 @@ export async function getLessonAPI(moduleId, lessonId) {
   const mod = DEMO_MODULES.find((m) => m.id === Number(moduleId));
   const lesson = mod?.lessons?.find((l) => l.id === Number(lessonId));
   if (lesson) {
+    // Generate rich demo content with interactive components based on module
+    const interactiveContent = DEMO_INTERACTIVE_CONTENT[lesson.slug || ''] || '';
     return {
       ...lesson,
       module_id: Number(moduleId),
-      content: `# ${lesson.title}\n\n## Overview\n\nThis lesson covers the fundamentals of **${lesson.title.toLowerCase()}**.\n\n### Learning Objectives\n\n${lesson.objectives.map((o) => `- ${o}`).join('\n')}\n\n---\n\n> **Note:** Full content is available when the backend is running. This is a demo preview.\n\n### Key Concepts\n\n` + '```' + `python\n# Example code for ${lesson.title}\ndef main():\n    print("Welcome to ${lesson.title}")\n    # Your code here\n\nif __name__ == "__main__":\n    main()\n` + '```' + `\n\n### Summary\n\nIn this lesson, you learned the core concepts of ${lesson.title.toLowerCase()}. Practice the exercises to reinforce your understanding.\n`,
-      exercises: [
-        {
-          id: 100 + Number(lessonId),
-          type: 'quiz',
-          title: `${lesson.title} Quiz`,
-          description: 'Test your knowledge',
-          points: 10,
-          question: `Which of the following is a key concept in ${lesson.title}?`,
-          options: lesson.objectives.slice(0, 4).map((o) => o.substring(0, 50)),
-          correct_answer: 0,
-          hints: ['Review the lesson objectives carefully.'],
-        },
-      ],
+      content: generateDemoLessonContent(lesson, interactiveContent),
+      exercises: generateDemoExercises(lesson, lessonId),
     };
   }
   return null;

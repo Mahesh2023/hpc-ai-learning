@@ -101,7 +101,7 @@ async def submit_exercise(exercise_id: str, submission: ExerciseSubmission, user
     if not ex:
         raise HTTPException(status_code=404, detail="Exercise not found")
 
-    result = evaluate(ex, submission.answer, submission.code)
+    result = await evaluate(ex, submission.answer, submission.code)
 
     # Track completed exercises in progress (find which module this exercise belongs to)
     for mod_summary in get_all_modules():

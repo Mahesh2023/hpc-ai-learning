@@ -141,6 +141,17 @@ function ExerciseItem({ exercise }) {
           {exercise.type === 'coding' && (
             <>
               <p style={styles.question}>{exercise.description}</p>
+              {/* Test cases preview */}
+              {exercise.test_cases && exercise.test_cases.length > 0 && (
+                <div style={{ marginBottom: '0.5rem', padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.1)', fontSize: '0.75rem' }}>
+                  <span style={{ color: '#06b6d4', fontWeight: '600' }}>Test Cases ({exercise.test_cases.filter(t => !t.hidden).length} visible, {exercise.test_cases.filter(t => t.hidden).length} hidden):</span>
+                  {exercise.test_cases.filter(t => !t.hidden).slice(0, 3).map((tc, i) => (
+                    <div key={i} style={{ marginTop: '0.25rem', color: '#64748b', fontFamily: 'monospace' }}>
+                      {tc.label}: <span style={{ color: '#94a3b8' }}>{tc.input ? `input="${tc.input}"` : ''} → expected: "{tc.expected_output}"</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #334155' }}>
                 <CodeEditor value={codeAnswer} onChange={setCodeAnswer} language="python" readOnly={submitted} height="180px" />
               </div>

@@ -6,22 +6,83 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { ArrowLeft, ArrowRight, CheckCircle2, Target, ChevronRight, PanelRightOpen, PanelRightClose, BookOpen, Clock } from 'lucide-react';
 import { getLessonAPI, getModuleAPI, completeLessonAPI } from '../utils/api';
 import ExercisePanel from '../components/ExercisePanel';
+import { InteractiveComponent, parseInteractiveContent } from '../components/InteractiveComponents';
 
+/**
+ * Enhanced MarkdownRenderer that supports inline interactive components.
+ * Lesson content can include:
+ *   :::interactive{component="SlurmSimulator"}
+ *   :::interactive{component="GuidedLab" config='{"preset":"linux-files"}'}
+ */
 function MarkdownRenderer({ content }) {
+  const parts = parseInteractiveContent(content || '');
+
   return (
     <div className="markdown-content">
-      <ReactMarkdown
-        components={{
-          code({ node, inline, className, children, ...props }) {
-            const match = /language-(\w+)/.exec(className || '');
-            return !inline && match ? (
-              <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div"
-                customStyle={{ background: '#0d1117', borderRadius: '10px', border: '1px solid #334155', padding: '1.25rem', fontSize: '0.875rem', lineHeight: '1.7', margin: '1rem 0' }}
-                {...props}>{String(children).replace(/\n$/, '')}</SyntaxHighlighter>
-            ) : (<code className={className} {...props}>{children}</code>);
-          },
-        }}
-      >{content}</ReactMarkdown>
+      {parts.map((part, idx) => {
+        if (part.type === 'interactive') {
+          return <InteractiveComponent key={`interactive-${idx}`} name={part.component} config={part.config} />;
+        }
+        return (
+          <ReactMarkdown
+            key={`md-${idx}`}
+            components={{
+              code({ node, inline, className, children, ...props }) {
+                const match = /language-(\w+)/.exec(className || '');
+                return !inline && match ? (
+                  <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div"
+                    customStyle={{ background: '#0d1117', borderRadius: '10px', border: '1px solid #334155', padding: '1.25rem', fontSize: '0.875rem', lineHeight: '1.7', margin: '1rem 0' }}
+                    {...props}>{String(children).replace(/\n$/, '')}</SyntaxHighlighter>
+                ) : (<code className={className} {...props}>{children}</code>);
+              },
+              // Enhanced tables for curriculum content
+              table({ children }) {
+                return (
+                  <div style={{ overflowX: 'auto', margin: '1rem 0' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>{children}</table>
+                  </div>
+                );
+              },
+              th({ children }) {
+                return <th style={{ padding: '0.625rem 1rem', textAlign: 'left', borderBottom: '2px solid #334155', color: '#06b6d4', fontWeight: '700', fontSize: '0.8125rem', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{children}</th>;
+              },
+              td({ children }) {
+                return <td style={{ padding: '0.5rem 1rem', borderBottom: '1px solid #1e293b', color: '#94a3b8' }}>{children}</td>;
+              },
+              // Callout blocks for important information
+              blockquote({ children }) {
+                return (
+                  <div style={{ margin: '1.25rem 0', padding: '1rem 1.25rem', borderLeft: '3px solid #8b5cf6', background: 'rgba(139,92,246,0.05)', borderRadius: '0 8px 8px 0', color: '#c4b5fd', fontSize: '0.875rem', lineHeight: '1.7' }}>
+                    {children}
+                  </div>
+                );
+              },
+              // Headings with anchor links
+              h2({ children }) {
+                return <h2 style={{ fontSize: '1.375rem', fontWeight: '800', color: '#f1f5f9', marginTop: '2.5rem', marginBottom: '1rem', paddingBottom: '0.5rem', borderBottom: '1px solid #334155' }}>{children}</h2>;
+              },
+              h3({ children }) {
+                return <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: '#e2e8f0', marginTop: '2rem', marginBottom: '0.75rem' }}>{children}</h3>;
+              },
+              // Enhanced list items
+              li({ children }) {
+                return <li style={{ color: '#94a3b8', lineHeight: '1.8', marginBottom: '0.25rem' }}>{children}</li>;
+              },
+              // Paragraph styling
+              p({ children }) {
+                return <p style={{ color: '#94a3b8', lineHeight: '1.8', marginBottom: '1rem' }}>{children}</p>;
+              },
+              // Strong/emphasis
+              strong({ children }) {
+                return <strong style={{ color: '#f1f5f9', fontWeight: '700' }}>{children}</strong>;
+              },
+              em({ children }) {
+                return <em style={{ color: '#c4b5fd' }}>{children}</em>;
+              },
+            }}
+          >{part.content}</ReactMarkdown>
+        );
+      })}
     </div>
   );
 }
@@ -65,6 +126,7 @@ export default function LessonViewer() {
   const currentIdx = lessons.findIndex((l) => l.id === Number(lessonId));
   const prevLesson = currentIdx > 0 ? lessons[currentIdx - 1] : null;
   const nextLesson = currentIdx < lessons.length - 1 ? lessons[currentIdx + 1] : null;
+  const exerciseCount = (lesson.exercises || []).length;
 
   const handleComplete = async () => {
     setCompleting(true);
@@ -91,6 +153,7 @@ export default function LessonViewer() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.75rem', color: '#64748b' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Clock size={14} />{lesson.estimated_minutes || 45} min</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><BookOpen size={14} />Lesson {currentIdx + 1} of {lessons.length}</span>
+            {exerciseCount > 0 && <span style={{ padding: '0.125rem 0.5rem', borderRadius: '6px', background: 'rgba(16,185,129,0.1)', color: '#10b981', fontWeight: '600' }}>{exerciseCount} exercises</span>}
           </div>
           {completed && <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', color: '#10b981', fontSize: '0.8125rem', fontWeight: '600' }}><CheckCircle2 size={16} />Completed</span>}
         </div>
@@ -109,7 +172,7 @@ export default function LessonViewer() {
           </div>
         )}
 
-        {/* Content */}
+        {/* Content — now supports inline interactive components */}
         <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '16px', padding: '2rem 2.5rem', marginBottom: '1.5rem' }}>
           <MarkdownRenderer content={lesson.content || ''} />
         </div>
