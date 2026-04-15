@@ -6,14 +6,78 @@
     "level": "beginner",
     "order_index": 1,
     "estimated_hours": 12,
-    "skills": ["Linux", "Bash", "System Admin"],
+    "skills": [
+      "Linux",
+      "Bash",
+      "System Admin"
+    ],
     "prerequisites": [],
     "lessons": [
-      { "id": 1, "slug": "linux-cli", "title": "Introduction to the Linux Shell", "order_index": 1, "estimated_minutes": 45, "objectives": ["Understand shell basics", "Navigate the filesystem", "Use basic commands"], "exercise_count": 3, "completed": true },
-      { "id": 2, "slug": "linux-cli", "title": "File System & Permissions", "order_index": 2, "estimated_minutes": 60, "objectives": ["Understand Linux file hierarchy", "Manage file permissions", "Use chmod and chown"], "exercise_count": 4, "completed": true },
-      { "id": 3, "slug": "shell-scripting", "title": "Shell Scripting Fundamentals", "order_index": 3, "estimated_minutes": 90, "objectives": ["Write bash scripts", "Use variables and loops", "Handle arguments"], "exercise_count": 5, "completed": false },
-      { "id": 4, "slug": "python-infra", "title": "Process Management & Monitoring", "order_index": 4, "estimated_minutes": 60, "objectives": ["Manage processes", "Use top/htop", "Understand signals"], "exercise_count": 3, "completed": false },
-      { "id": 5, "slug": "networking", "title": "Networking Basics", "order_index": 5, "estimated_minutes": 75, "objectives": ["Understand TCP/IP", "Use SSH effectively", "Network troubleshooting"], "exercise_count": 4, "completed": false }
+      {
+        "id": 1,
+        "slug": "linux-cli",
+        "title": "Introduction to the Linux Shell",
+        "order_index": 1,
+        "estimated_minutes": 45,
+        "objectives": [
+          "Understand shell basics",
+          "Navigate the filesystem",
+          "Use basic commands"
+        ],
+        "completed": true
+      },
+      {
+        "id": 2,
+        "slug": "linux-cli",
+        "title": "File System & Permissions",
+        "order_index": 2,
+        "estimated_minutes": 60,
+        "objectives": [
+          "Understand Linux file hierarchy",
+          "Manage file permissions",
+          "Use chmod and chown"
+        ],
+        "completed": true
+      },
+      {
+        "id": 3,
+        "slug": "shell-scripting",
+        "title": "Shell Scripting Fundamentals",
+        "order_index": 3,
+        "estimated_minutes": 90,
+        "objectives": [
+          "Write bash scripts",
+          "Use variables and loops",
+          "Handle arguments"
+        ],
+        "completed": false
+      },
+      {
+        "id": 4,
+        "slug": "python-infra",
+        "title": "Process Management & Monitoring",
+        "order_index": 4,
+        "estimated_minutes": 60,
+        "objectives": [
+          "Manage processes",
+          "Use top/htop",
+          "Understand signals"
+        ],
+        "completed": false
+      },
+      {
+        "id": 5,
+        "slug": "networking",
+        "title": "Networking Basics",
+        "order_index": 5,
+        "estimated_minutes": 75,
+        "objectives": [
+          "Understand TCP/IP",
+          "Use SSH effectively",
+          "Network troubleshooting"
+        ],
+        "completed": false
+      }
     ],
     "completion_percentage": 40,
     "status": "in_progress"
@@ -25,13 +89,68 @@
     "level": "beginner",
     "order_index": 2,
     "estimated_hours": 15,
-    "skills": ["HPC", "SLURM", "MPI", "Parallel Computing"],
-    "prerequisites": ["Linux & Command Line Mastery"],
+    "skills": [
+      "HPC",
+      "SLURM",
+      "MPI",
+      "Parallel Computing"
+    ],
+    "prerequisites": [
+      "Linux & Command Line Mastery"
+    ],
     "lessons": [
-      { "id": 6, "slug": "cluster-architecture", "title": "HPC Architecture Overview", "order_index": 1, "estimated_minutes": 60, "objectives": ["Understand cluster architecture", "Learn about interconnects", "Know compute vs storage nodes"], "exercise_count": 3, "completed": true },
-      { "id": 7, "slug": "slurm-fundamentals", "title": "Introduction to SLURM", "order_index": 2, "estimated_minutes": 90, "objectives": ["Submit jobs with sbatch", "Monitor jobs with squeue", "Configure job resources"], "exercise_count": 5, "completed": false },
-      { "id": 8, "slug": "mpi-programming", "title": "Parallel Computing with MPI", "order_index": 3, "estimated_minutes": 120, "objectives": ["Understand message passing", "Write basic MPI programs", "Run multi-node jobs"], "exercise_count": 4, "completed": false },
-      { "id": 9, "slug": "gpu-cuda-fundamentals", "title": "GPU Computing Basics", "order_index": 4, "estimated_minutes": 90, "objectives": ["Understand GPU architecture", "CUDA fundamentals", "GPU job scheduling"], "exercise_count": 4, "completed": false }
+      {
+        "id": 6,
+        "slug": "cluster-architecture",
+        "title": "HPC Architecture Overview",
+        "order_index": 1,
+        "estimated_minutes": 60,
+        "objectives": [
+          "Understand cluster architecture",
+          "Learn about interconnects",
+          "Know compute vs storage nodes"
+        ],
+        "completed": true
+      },
+      {
+        "id": 7,
+        "slug": "slurm-fundamentals",
+        "title": "Introduction to SLURM",
+        "order_index": 2,
+        "estimated_minutes": 90,
+        "objectives": [
+          "Submit jobs with sbatch",
+          "Monitor jobs with squeue",
+          "Configure job resources"
+        ],
+        "completed": false
+      },
+      {
+        "id": 8,
+        "slug": "mpi-programming",
+        "title": "Parallel Computing with MPI",
+        "order_index": 3,
+        "estimated_minutes": 120,
+        "objectives": [
+          "Understand message passing",
+          "Write basic MPI programs",
+          "Run multi-node jobs"
+        ],
+        "completed": false
+      },
+      {
+        "id": 9,
+        "slug": "gpu-cuda-fundamentals",
+        "title": "GPU Computing Basics",
+        "order_index": 4,
+        "estimated_minutes": 90,
+        "objectives": [
+          "Understand GPU architecture",
+          "CUDA fundamentals",
+          "GPU job scheduling"
+        ],
+        "completed": false
+      }
     ],
     "completion_percentage": 25,
     "status": "in_progress"
@@ -43,13 +162,69 @@
     "level": "intermediate",
     "order_index": 3,
     "estimated_hours": 18,
-    "skills": ["Docker", "Singularity", "Kubernetes", "Container Security"],
-    "prerequisites": ["Linux & Command Line Mastery", "HPC Fundamentals & Job Scheduling"],
+    "skills": [
+      "Docker",
+      "Singularity",
+      "Kubernetes",
+      "Container Security"
+    ],
+    "prerequisites": [
+      "Linux & Command Line Mastery",
+      "HPC Fundamentals & Job Scheduling"
+    ],
     "lessons": [
-      { "id": 10, "slug": "docker-fundamentals", "title": "Docker Fundamentals", "order_index": 1, "estimated_minutes": 90, "objectives": ["Build Docker images", "Manage containers", "Docker networking"], "exercise_count": 5, "completed": false },
-      { "id": 11, "slug": "singularity-apptainer", "title": "Singularity for HPC", "order_index": 2, "estimated_minutes": 75, "objectives": ["Build Singularity containers", "Run on HPC clusters", "GPU passthrough"], "exercise_count": 4, "completed": false },
-      { "id": 12, "slug": "kubernetes-core", "title": "Kubernetes Architecture", "order_index": 3, "estimated_minutes": 90, "objectives": ["Understand K8s components", "Deploy applications", "Service discovery"], "exercise_count": 4, "completed": false },
-      { "id": 13, "slug": "kubernetes-gpu", "title": "K8s for AI Workloads", "order_index": 4, "estimated_minutes": 120, "objectives": ["GPU scheduling in K8s", "Helm charts", "Resource management"], "exercise_count": 5, "completed": false }
+      {
+        "id": 10,
+        "slug": "docker-fundamentals",
+        "title": "Docker Fundamentals",
+        "order_index": 1,
+        "estimated_minutes": 90,
+        "objectives": [
+          "Build Docker images",
+          "Manage containers",
+          "Docker networking"
+        ],
+        "completed": false
+      },
+      {
+        "id": 11,
+        "slug": "singularity-apptainer",
+        "title": "Singularity for HPC",
+        "order_index": 2,
+        "estimated_minutes": 75,
+        "objectives": [
+          "Build Singularity containers",
+          "Run on HPC clusters",
+          "GPU passthrough"
+        ],
+        "completed": false
+      },
+      {
+        "id": 12,
+        "slug": "kubernetes-core",
+        "title": "Kubernetes Architecture",
+        "order_index": 3,
+        "estimated_minutes": 90,
+        "objectives": [
+          "Understand K8s components",
+          "Deploy applications",
+          "Service discovery"
+        ],
+        "completed": false
+      },
+      {
+        "id": 13,
+        "slug": "kubernetes-gpu",
+        "title": "K8s for AI Workloads",
+        "order_index": 4,
+        "estimated_minutes": 120,
+        "objectives": [
+          "GPU scheduling in K8s",
+          "Helm charts",
+          "Resource management"
+        ],
+        "completed": false
+      }
     ],
     "completion_percentage": 0,
     "status": "available"
@@ -61,13 +236,68 @@
     "level": "intermediate",
     "order_index": 4,
     "estimated_hours": 20,
-    "skills": ["PyTorch", "TensorFlow", "Distributed Training", "MLOps"],
-    "prerequisites": ["Containers & Orchestration"],
+    "skills": [
+      "PyTorch",
+      "TensorFlow",
+      "Distributed Training",
+      "MLOps"
+    ],
+    "prerequisites": [
+      "Containers & Orchestration"
+    ],
     "lessons": [
-      { "id": 14, "slug": "ml-frameworks", "title": "ML Framework Environments", "order_index": 1, "estimated_minutes": 60, "objectives": ["Set up PyTorch/TF environments", "Manage CUDA versions", "Virtual environments"], "exercise_count": 3, "completed": false },
-      { "id": 15, "slug": "distributed-training", "title": "Distributed Training", "order_index": 2, "estimated_minutes": 120, "objectives": ["Data parallelism", "Model parallelism", "Multi-GPU training"], "exercise_count": 5, "completed": false },
-      { "id": 16, "slug": "model-serving", "title": "Model Serving & Inference", "order_index": 3, "estimated_minutes": 90, "objectives": ["TorchServe/TF Serving", "Triton Inference Server", "Optimization"], "exercise_count": 4, "completed": false },
-      { "id": 17, "slug": "mlops-pipelines", "title": "MLOps Pipelines", "order_index": 4, "estimated_minutes": 90, "objectives": ["CI/CD for ML", "Experiment tracking", "Model registry"], "exercise_count": 4, "completed": false }
+      {
+        "id": 14,
+        "slug": "ml-frameworks",
+        "title": "ML Framework Environments",
+        "order_index": 1,
+        "estimated_minutes": 60,
+        "objectives": [
+          "Set up PyTorch/TF environments",
+          "Manage CUDA versions",
+          "Virtual environments"
+        ],
+        "completed": false
+      },
+      {
+        "id": 15,
+        "slug": "distributed-training",
+        "title": "Distributed Training",
+        "order_index": 2,
+        "estimated_minutes": 120,
+        "objectives": [
+          "Data parallelism",
+          "Model parallelism",
+          "Multi-GPU training"
+        ],
+        "completed": false
+      },
+      {
+        "id": 16,
+        "slug": "model-serving",
+        "title": "Model Serving & Inference",
+        "order_index": 3,
+        "estimated_minutes": 90,
+        "objectives": [
+          "TorchServe/TF Serving",
+          "Triton Inference Server",
+          "Optimization"
+        ],
+        "completed": false
+      },
+      {
+        "id": 17,
+        "slug": "mlops-pipelines",
+        "title": "MLOps Pipelines",
+        "order_index": 4,
+        "estimated_minutes": 90,
+        "objectives": [
+          "CI/CD for ML",
+          "Experiment tracking",
+          "Model registry"
+        ],
+        "completed": false
+      }
     ],
     "completion_percentage": 0,
     "status": "locked"
@@ -79,13 +309,69 @@
     "level": "advanced",
     "order_index": 5,
     "estimated_hours": 22,
-    "skills": ["Terraform", "GitOps", "Observability", "Platform Design"],
-    "prerequisites": ["Containers & Orchestration", "AI/ML Infrastructure & Frameworks"],
+    "skills": [
+      "Terraform",
+      "GitOps",
+      "Observability",
+      "Platform Design"
+    ],
+    "prerequisites": [
+      "Containers & Orchestration",
+      "AI/ML Infrastructure & Frameworks"
+    ],
     "lessons": [
-      { "id": 18, "slug": "infrastructure-as-code", "title": "Infrastructure as Code", "order_index": 1, "estimated_minutes": 90, "objectives": ["Terraform for HPC", "Ansible automation", "State management"], "exercise_count": 5, "completed": false },
-      { "id": 19, "slug": "gitops-argocd", "title": "GitOps & ArgoCD", "order_index": 2, "estimated_minutes": 90, "objectives": ["GitOps principles", "ArgoCD setup", "Declarative infrastructure"], "exercise_count": 4, "completed": false },
-      { "id": 20, "slug": "observability-stack", "title": "Observability Stack", "order_index": 3, "estimated_minutes": 120, "objectives": ["Prometheus/Grafana", "GPU metrics", "Alerting"], "exercise_count": 5, "completed": false },
-      { "id": 21, "slug": "self-service-platforms", "title": "Self-Service Platforms", "order_index": 4, "estimated_minutes": 90, "objectives": ["Backstage/Port", "Service catalogs", "Developer experience"], "exercise_count": 3, "completed": false }
+      {
+        "id": 18,
+        "slug": "infrastructure-as-code",
+        "title": "Infrastructure as Code",
+        "order_index": 1,
+        "estimated_minutes": 90,
+        "objectives": [
+          "Terraform for HPC",
+          "Ansible automation",
+          "State management"
+        ],
+        "completed": false
+      },
+      {
+        "id": 19,
+        "slug": "gitops-argocd",
+        "title": "GitOps & ArgoCD",
+        "order_index": 2,
+        "estimated_minutes": 90,
+        "objectives": [
+          "GitOps principles",
+          "ArgoCD setup",
+          "Declarative infrastructure"
+        ],
+        "completed": false
+      },
+      {
+        "id": 20,
+        "slug": "observability-stack",
+        "title": "Observability Stack",
+        "order_index": 3,
+        "estimated_minutes": 120,
+        "objectives": [
+          "Prometheus/Grafana",
+          "GPU metrics",
+          "Alerting"
+        ],
+        "completed": false
+      },
+      {
+        "id": 21,
+        "slug": "self-service-platforms",
+        "title": "Self-Service Platforms",
+        "order_index": 4,
+        "estimated_minutes": 90,
+        "objectives": [
+          "Backstage/Port",
+          "Service catalogs",
+          "Developer experience"
+        ],
+        "completed": false
+      }
     ],
     "completion_percentage": 0,
     "status": "locked"
@@ -97,13 +383,68 @@
     "level": "professional",
     "order_index": 6,
     "estimated_hours": 25,
-    "skills": ["Security", "Multi-tenancy", "Cost Optimization", "LLM Ops"],
-    "prerequisites": ["Platform Engineering for AI"],
+    "skills": [
+      "Security",
+      "Multi-tenancy",
+      "Cost Optimization",
+      "LLM Ops"
+    ],
+    "prerequisites": [
+      "Platform Engineering for AI"
+    ],
     "lessons": [
-      { "id": 22, "slug": "multi-tenant-platforms", "title": "Multi-tenant AI Platforms", "order_index": 1, "estimated_minutes": 120, "objectives": ["Namespace isolation", "Resource quotas", "Fair scheduling"], "exercise_count": 4, "completed": false },
-      { "id": 23, "slug": "security-compliance", "title": "Security & Compliance", "order_index": 2, "estimated_minutes": 90, "objectives": ["RBAC", "Network policies", "Data governance"], "exercise_count": 4, "completed": false },
-      { "id": 24, "slug": "cost-optimization", "title": "Cost Optimization", "order_index": 3, "estimated_minutes": 90, "objectives": ["GPU utilization", "Spot instances", "Chargeback models"], "exercise_count": 3, "completed": false },
-      { "id": 25, "slug": "llm-deployment", "title": "Large-Scale LLM Deployment", "order_index": 4, "estimated_minutes": 150, "objectives": ["LLM serving patterns", "vLLM/TGI", "RAG infrastructure"], "exercise_count": 5, "completed": false }
+      {
+        "id": 22,
+        "slug": "multi-tenant-platforms",
+        "title": "Multi-tenant AI Platforms",
+        "order_index": 1,
+        "estimated_minutes": 120,
+        "objectives": [
+          "Namespace isolation",
+          "Resource quotas",
+          "Fair scheduling"
+        ],
+        "completed": false
+      },
+      {
+        "id": 23,
+        "slug": "security-compliance",
+        "title": "Security & Compliance",
+        "order_index": 2,
+        "estimated_minutes": 90,
+        "objectives": [
+          "RBAC",
+          "Network policies",
+          "Data governance"
+        ],
+        "completed": false
+      },
+      {
+        "id": 24,
+        "slug": "cost-optimization",
+        "title": "Cost Optimization",
+        "order_index": 3,
+        "estimated_minutes": 90,
+        "objectives": [
+          "GPU utilization",
+          "Spot instances",
+          "Chargeback models"
+        ],
+        "completed": false
+      },
+      {
+        "id": 25,
+        "slug": "llm-deployment",
+        "title": "Large-Scale LLM Deployment",
+        "order_index": 4,
+        "estimated_minutes": 150,
+        "objectives": [
+          "LLM serving patterns",
+          "vLLM/TGI",
+          "RAG infrastructure"
+        ],
+        "completed": false
+      }
     ],
     "completion_percentage": 0,
     "status": "locked"

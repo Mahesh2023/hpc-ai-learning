@@ -29,7 +29,6 @@ async def module_detail(module_id: str):
             "title": les.title,
             "order": les.order,
             "objectives": les.objectives,
-            "exercise_count": len(les.exercises),
         })
     return {
         "id": mod.id,

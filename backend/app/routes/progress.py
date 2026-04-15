@@ -1,19 +1,18 @@
-"""Progress tracking and exercise submission routes."""
+"""Progress tracking routes."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..models.schemas import (
-    UserProgress, DashboardStats, ExerciseSubmission, ExerciseResult,
+    UserProgress, DashboardStats,
     LearningPath, LearningPathModule,
 )
 from ..models.database import save_progress, get_progress, get_all_progress
 from ..routes.auth import require_user
 from ..services.curriculum_loader import (
-    get_all_modules, get_module, get_exercise, get_total_lessons,
+    get_all_modules, get_module, get_total_lessons,
 )
-from ..services.exercise_evaluator import evaluate
 
 router = APIRouter(tags=["progress"])
 
@@ -132,7 +131,6 @@ async def complete_lesson(module_id: str, lesson_id: str, user=Depends(require_u
 
     prog = get_progress(user["id"], module_id) or {
         "lessons_completed": [],
-        "exercises_completed": [],
         "score": 0,
     }
 
@@ -148,39 +146,6 @@ async def complete_lesson(module_id: str, lesson_id: str, user=Depends(require_u
         "completion_pct": round(pct, 1),
     })
     return {"status": "ok", "completion_pct": round(pct, 1), "lessons_completed": lessons_done}
-
-
-@router.post("/api/exercises/{exercise_id}/submit", response_model=ExerciseResult)
-async def submit_exercise(exercise_id: str, submission: ExerciseSubmission, user=Depends(require_user)):
-    ex = get_exercise(exercise_id)
-    if not ex:
-        raise HTTPException(status_code=404, detail="Exercise not found")
-
-    result = await evaluate(ex, submission.answer, submission.code)
-
-    # Track completed exercises in progress (find which module this exercise belongs to)
-    for mod_summary in get_all_modules():
-        mod = get_module(mod_summary.id)
-        if not mod:
-            continue
-        for lesson in mod.lessons:
-            for lex in lesson.exercises:
-                if lex.id == exercise_id:
-                    prog = get_progress(user["id"], mod.id) or {
-                        "lessons_completed": [],
-                        "exercises_completed": [],
-                        "score": 0,
-                    }
-                    ex_done = list(prog.get("exercises_completed", []))
-                    if exercise_id not in ex_done and result.correct:
-                        ex_done.append(exercise_id)
-                    score = prog.get("score", 0) + result.score
-                    save_progress(user["id"], mod.id, {
-                        "exercises_completed": ex_done,
-                        "score": score,
-                    })
-                    return result
-    return result
 
 
 @router.get("/api/learning-path", response_model=LearningPath)

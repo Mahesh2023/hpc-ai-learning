@@ -3,9 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { ArrowLeft, ArrowRight, CheckCircle2, Target, ChevronRight, BookOpen, Clock, Zap, FileText } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, ChevronRight, BookOpen, Clock, Zap, FileText } from 'lucide-react';
 import { getLessonAPI, getModuleAPI, completeLessonAPI } from '../utils/api';
-import ExercisePanel from '../components/ExercisePanel';
 import BookmarkButton from '../components/BookmarkButton';
 import { InteractiveComponent, parseInteractiveContent } from '../components/InteractiveComponents';
 
@@ -195,12 +194,7 @@ export default function LessonViewer() {
             <FileText size={16} />
             Reading
           </button>
-          {(lesson.exercises || []).length > 0 && (
-            <button style={TAB_STYLES.tab(activeTab === 'exercises')} onClick={() => setActiveTab('exercises')}>
-              <Target size={16} />
-              Exercises ({(lesson.exercises || []).length})
-            </button>
-          )}
+
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.75rem', color: '#64748b' }}>
@@ -244,14 +238,7 @@ export default function LessonViewer() {
         </div>
       )}
 
-      {/* EXERCISES TAB — Quiz/coding/lab exercises */}
-      {activeTab === 'exercises' && (
-        <div style={{ maxWidth: '700px' }}>
-          <ExercisePanel exercises={lesson.exercises || []} />
-        </div>
-      )}
 
-      {/* Navigation Footer */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', padding: '1.25rem 0', borderTop: '1px solid #334155', marginTop: '1.5rem' }}>
         {prevLesson ? (
           <button style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.625rem 1.25rem', fontSize: '0.875rem', fontWeight: '600', borderRadius: '10px', border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', cursor: 'pointer', transition: 'all 150ms ease' }}

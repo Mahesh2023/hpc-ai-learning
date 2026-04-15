@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search as SearchIcon, BookOpen, FileText, Code, X } from 'lucide-react';
+import { Search as SearchIcon, BookOpen, FileText, X } from 'lucide-react';
 import DEMO_MODULES from '../data/modules.json';
-import { LESSON_EXERCISES } from '../data/exerciseData';
-import { LESSON_EXERCISES_2 } from '../data/exerciseData2';
 
 const styles = {
   container: {
@@ -198,7 +196,6 @@ const styles = {
 const categoryConfig = {
   modules: { label: 'Modules', icon: BookOpen, color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.1)', border: 'rgba(6, 182, 212, 0.3)' },
   lessons: { label: 'Lessons', icon: FileText, color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.3)' },
-  exercises: { label: 'Exercises', icon: Code, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)', border: 'rgba(139, 92, 246, 0.3)' },
 };
 
 function buildSearchIndex(modules) {
@@ -227,23 +224,6 @@ function buildSearchIndex(modules) {
         meta: `${mod.title} - ${lesson.estimated_minutes} min`,
         path: `/modules/${mod.id}/lessons/${lesson.id}`,
         searchText: `${lesson.title} ${(lesson.objectives || []).join(' ')} ${lesson.slug || ''}`.toLowerCase(),
-      });
-
-      const allExercises = { ...LESSON_EXERCISES, ...LESSON_EXERCISES_2 };
-      const exercises = allExercises[lesson.id] || [];
-      exercises.forEach((exercise) => {
-        items.push({
-          type: 'exercise',
-          category: 'exercises',
-          id: exercise.id,
-          lessonId: lesson.id,
-          moduleId: mod.id,
-          title: exercise.title,
-          description: exercise.description || '',
-          meta: `${lesson.title} - ${exercise.type} - ${exercise.points} pts`,
-          path: `/modules/${mod.id}/lessons/${lesson.id}`,
-          searchText: `${exercise.title} ${exercise.description || ''} ${exercise.type}`.toLowerCase(),
-        });
       });
     });
   });
@@ -292,7 +272,7 @@ export default function Search() {
   }, []);
 
   const results = useMemo(() => {
-    if (!debouncedQuery) return { modules: [], lessons: [], exercises: [] };
+    if (!debouncedQuery) return { modules: [], lessons: [] };
 
     const terms = debouncedQuery.split(/\s+/).filter(Boolean);
 
@@ -303,11 +283,10 @@ export default function Search() {
     return {
       modules: matches.filter((m) => m.category === 'modules'),
       lessons: matches.filter((m) => m.category === 'lessons'),
-      exercises: matches.filter((m) => m.category === 'exercises'),
     };
   }, [debouncedQuery, searchIndex]);
 
-  const totalResults = results.modules.length + results.lessons.length + results.exercises.length;
+  const totalResults = results.modules.length + results.lessons.length;
 
   const handleResultClick = useCallback((path) => {
     navigate(path);
@@ -378,7 +357,7 @@ export default function Search() {
       <div style={styles.header}>
         <h1 style={styles.title}>Search</h1>
         <p style={styles.subtitle}>
-          Search across modules, lessons, and exercises
+          Search across modules, lessons, and labs
         </p>
       </div>
 
@@ -389,7 +368,7 @@ export default function Search() {
         <input
           ref={inputRef}
           type="text"
-          placeholder="Search modules, lessons, exercises..."
+          placeholder="Search modules, lessons, labs..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setIsFocused(true)}
@@ -428,7 +407,6 @@ export default function Search() {
           </div>
           {renderCategory('modules')}
           {renderCategory('lessons')}
-          {renderCategory('exercises')}
         </>
       )}
 
@@ -447,7 +425,7 @@ export default function Search() {
           <SearchIcon size={48} style={styles.initialIcon} />
           <h2 style={styles.initialTitle}>Start typing to search</h2>
           <p style={styles.initialText}>
-            Search across {DEMO_MODULES.length} modules, {searchIndex.filter((i) => i.category === 'lessons').length} lessons, and {searchIndex.filter((i) => i.category === 'exercises').length} exercises.
+            Search across {DEMO_MODULES.length} modules and {searchIndex.filter((i) => i.category === 'lessons').length} lessons.
           </p>
         </div>
       )}

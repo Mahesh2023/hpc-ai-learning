@@ -12,13 +12,13 @@ const ACHIEVEMENTS = [
   { id: 'all_modules',     name: 'Curriculum Master',  description: 'Complete every module in the platform',            icon: '👑', category: 'Learning Progress', points: 200, requirement: 'Complete all modules' },
   { id: 'halfway',         name: 'Halfway There',      description: 'Reach 50% overall learning progress',             icon: '⚡', category: 'Learning Progress', points: 40,  requirement: 'Reach 50% progress' },
 
-  // Exercise Mastery
-  { id: 'first_quiz',      name: 'Quiz Taker',         description: 'Submit your first quiz answer',                   icon: '✏️', category: 'Exercise Mastery',  points: 10,  requirement: 'Complete 1 quiz' },
-  { id: 'ten_quizzes',     name: 'Quiz Whiz',          description: 'Complete 10 quizzes successfully',                icon: '🧠', category: 'Exercise Mastery',  points: 30,  requirement: 'Complete 10 quizzes' },
-  { id: 'perfect_score',   name: 'Perfect Score',      description: 'Score 100% on any quiz',                          icon: '💯', category: 'Exercise Mastery',  points: 50,  requirement: 'Get 100% on a quiz' },
-  { id: 'lab_master',      name: 'Lab Master',         description: 'Complete 5 hands-on lab exercises',               icon: '🔬', category: 'Exercise Mastery',  points: 60,  requirement: 'Complete 5 labs' },
-  { id: 'coding_pro',      name: 'Coding Pro',         description: 'Submit 10 code exercises with passing results',   icon: '💻', category: 'Exercise Mastery',  points: 75,  requirement: 'Pass 10 code exercises' },
-  { id: 'score_500',       name: 'High Scorer',        description: 'Accumulate 500 total score points',               icon: '🏆', category: 'Exercise Mastery',  points: 40,  requirement: 'Reach 500 total score' },
+  // Lab Mastery
+  { id: 'first_lab',        name: 'Lab Rookie',         description: 'Complete your first interactive lab',             icon: '🔬', category: 'Lab Mastery',       points: 10,  requirement: 'Complete 1 lab' },
+  { id: 'five_labs',        name: 'Lab Enthusiast',     description: 'Complete 5 interactive labs',                     icon: '🧪', category: 'Lab Mastery',       points: 30,  requirement: 'Complete 5 labs' },
+  { id: 'ten_labs',         name: 'Lab Veteran',        description: 'Complete 10 interactive labs',                    icon: '🧠', category: 'Lab Mastery',       points: 50,  requirement: 'Complete 10 labs' },
+  { id: 'all_tasks',        name: 'Task Master',        description: 'Finish all tasks in a single lab',               icon: '💯', category: 'Lab Mastery',       points: 40,  requirement: 'All tasks in 1 lab' },
+  { id: 'twenty_labs',      name: 'Lab Master',         description: 'Complete 20 interactive labs',                    icon: '💻', category: 'Lab Mastery',       points: 75,  requirement: 'Complete 20 labs' },
+  { id: 'all_labs',         name: 'Lab Legend',         description: 'Complete all 25 interactive labs',                icon: '🏆', category: 'Lab Mastery',       points: 200, requirement: 'Complete all 25 labs' },
 
   // Engagement
   { id: 'streak_3',        name: 'Getting Warm',       description: 'Maintain a 3-day learning streak',                icon: '🔥', category: 'Engagement',        points: 15,  requirement: '3-day streak' },
@@ -37,11 +37,11 @@ const ACHIEVEMENTS = [
   { id: 'network_ninja',   name: 'Network Ninja',      description: 'Master HPC networking and interconnects',         icon: '🌐', category: 'HPC Skills',        points: 60,  requirement: 'Finish networking module' },
 ];
 
-const CATEGORIES = ['All', 'Learning Progress', 'Exercise Mastery', 'Engagement', 'HPC Skills'];
+const CATEGORIES = ['All', 'Learning Progress', 'Lab Mastery', 'Engagement', 'HPC Skills'];
 
 const CATEGORY_ICONS = {
   'Learning Progress': Star,
-  'Exercise Mastery': Target,
+  'Lab Mastery': Target,
   'Engagement':       Zap,
   'HPC Skills':       Crown,
 };
@@ -90,11 +90,8 @@ function deriveEarned(user) {
   const completedLessons = parseInt(localStorage.getItem('hpc_completed_lessons') || '0', 10);
   const completedModules = parseInt(localStorage.getItem('hpc_completed_modules') || '0', 10);
   const totalModules     = parseInt(localStorage.getItem('hpc_total_modules') || '0', 10);
-  const completedQuizzes = parseInt(localStorage.getItem('hpc_completed_quizzes') || '0', 10);
-  const completedLabs    = parseInt(localStorage.getItem('hpc_completed_labs') || '0', 10);
-  const completedCode    = parseInt(localStorage.getItem('hpc_completed_code') || '0', 10);
-  const hasPerfectScore  = localStorage.getItem('hpc_perfect_score') === 'true';
-  const totalScore       = parseInt(localStorage.getItem('hpc_total_score') || '0', 10);
+  const completedLabs     = parseInt(localStorage.getItem('hpc_completed_labs') || '0', 10);
+  const hasAllTasks       = localStorage.getItem('hpc_all_tasks_in_lab') === 'true';
   const currentStreak    = parseInt(localStorage.getItem('hpc_current_streak') || '0', 10);
   const overallProgress  = parseInt(localStorage.getItem('hpc_overall_progress') || '0', 10);
 
@@ -106,13 +103,13 @@ function deriveEarned(user) {
   if (totalModules > 0 && completedModules >= totalModules) earned.add('all_modules');
   if (overallProgress >= 50)  earned.add('halfway');
 
-  // Exercise Mastery
-  if (completedQuizzes >= 1)  earned.add('first_quiz');
-  if (completedQuizzes >= 10) earned.add('ten_quizzes');
-  if (hasPerfectScore)        earned.add('perfect_score');
-  if (completedLabs >= 5)     earned.add('lab_master');
-  if (completedCode >= 10)    earned.add('coding_pro');
-  if (totalScore >= 500)      earned.add('score_500');
+  // Lab Mastery
+  if (completedLabs >= 1)  earned.add('first_lab');
+  if (completedLabs >= 5)  earned.add('five_labs');
+  if (completedLabs >= 10) earned.add('ten_labs');
+  if (hasAllTasks)         earned.add('all_tasks');
+  if (completedLabs >= 20) earned.add('twenty_labs');
+  if (completedLabs >= 25) earned.add('all_labs');
 
   // Engagement
   if (currentStreak >= 3)  earned.add('streak_3');
@@ -440,7 +437,7 @@ export default function Achievements() {
 
   const catColors = {
     'Learning Progress': '#06b6d4',
-    'Exercise Mastery':  '#8b5cf6',
+    'Lab Mastery':       '#8b5cf6',
     'Engagement':        '#f97316',
     'HPC Skills':        '#10b981',
   };

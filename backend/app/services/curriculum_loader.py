@@ -9,10 +9,9 @@ from typing import Optional
 import yaml
 
 from ..config import CURRICULUM_DIR
-from ..models.schemas import Module, Lesson, Exercise, ModuleSummary
+from ..models.schemas import Module, Lesson, ModuleSummary
 
 _modules: dict[str, Module] = {}
-_exercises: dict[str, Exercise] = {}
 
 JSON_DIR = CURRICULUM_DIR / "json"
 
@@ -27,9 +26,8 @@ def _load_file(path: Path) -> dict | None:
 
 def load_curriculum() -> None:
     """Load curriculum data. Prefers JSON from json/ subdir, falls back to YAML."""
-    global _modules, _exercises
+    global _modules
     _modules.clear()
-    _exercises.clear()
 
     if not CURRICULUM_DIR.exists():
         return
@@ -48,18 +46,12 @@ def load_curriculum() -> None:
 
         lessons = []
         for ldata in data.get("lessons", []):
-            exercises = []
-            for edata in ldata.get("exercises", []):
-                ex = Exercise(**edata)
-                exercises.append(ex)
-                _exercises[ex.id] = ex
             lesson = Lesson(
                 id=ldata["id"],
                 title=ldata["title"],
                 content_md=ldata.get("content_md", ""),
                 order=ldata.get("order", 0),
                 objectives=ldata.get("objectives", []),
-                exercises=exercises,
             )
             lessons.append(lesson)
 
@@ -101,10 +93,6 @@ def get_lesson(module_id: str, lesson_id: str) -> Optional[Lesson]:
         if lesson.id == lesson_id:
             return lesson
     return None
-
-
-def get_exercise(exercise_id: str) -> Optional[Exercise]:
-    return _exercises.get(exercise_id)
 
 
 def get_total_lessons(module_id: str) -> int:

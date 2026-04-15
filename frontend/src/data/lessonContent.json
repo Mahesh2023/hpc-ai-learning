@@ -10,49 +10,6 @@
       "Navigate the Linux filesystem using command-line tools",
       "Execute basic commands for file and directory management"
     ],
-    "content": "# Introduction to the Linux Shell\n\n## What is a Shell?\n\nA **shell** is a command-line interface (CLI) that provides a way to interact with the operating system. It acts as an intermediary between the user and the kernel, translating commands into system calls.\n\n### Common Shell Types\n\n| Shell | Path | Description |\n|-------|------|-------------|\n| Bash | `/bin/bash` | Bourne Again Shell - most common on Linux |\n| Zsh | `/bin/zsh` | Z Shell - default on macOS |\n| Fish | `/usr/bin/fish` | Friendly Interactive Shell |\n\n## Your First Commands\n\nLet us start with some essential commands:\n\n```bash\n# Print working directory\npwd\n\n# List files and directories\nls -la\n\n# Change directory\ncd /home/user\n\n# Create a directory\nmkdir my_hpc_project\n\n# Create a file\ntouch hello.sh\n```\n\n## Navigating the Filesystem\n\nThe Linux filesystem is organized as a tree structure starting from the root `/`:\n\n```\n/\n\u251c\u2500\u2500 home/          # User home directories\n\u2502   \u2514\u2500\u2500 user/\n\u251c\u2500\u2500 etc/           # System configuration\n\u251c\u2500\u2500 var/           # Variable data (logs, etc.)\n\u251c\u2500\u2500 tmp/           # Temporary files\n\u251c\u2500\u2500 opt/           # Optional software\n\u2514\u2500\u2500 usr/           # User programs\n    \u251c\u2500\u2500 bin/\n    \u2514\u2500\u2500 lib/\n```\n\n### Essential Navigation Commands\n\n```bash\n# Go to home directory\ncd ~\n\n# Go up one level\ncd ..\n\n# Go to previous directory\ncd -\n\n# Show directory tree\ntree -L 2\n\n# Find files\nfind /home -name \"*.sh\" -type f\n```\n\n## File Operations\n\n```bash\n# Copy files\ncp source.txt destination.txt\n\n# Move/rename files\nmv old_name.txt new_name.txt\n\n# Remove files (careful!)\nrm unwanted_file.txt\n\n# Remove directory recursively\nrm -rf old_directory/\n\n# View file contents\ncat config.yaml\nless large_log_file.log\nhead -20 output.csv\ntail -f /var/log/syslog\n```\n\n## Pro Tip: Tab Completion\n\nAlways use **Tab** for auto-completion! It saves time and prevents typos. Double-tap Tab to see all possibilities.\n\n## HPC Context\n\nIn HPC environments, you will be working extensively with the command line to:\n- Submit and monitor compute jobs\n- Manage large datasets\n- Configure software environments\n- Debug parallel applications\n\n:::interactive{component=\"GuidedLab\" config='{\"preset\":\"linux-files\"}'}\n\n> **Note**: Most HPC clusters run Linux (typically RHEL/CentOS or Ubuntu). Mastering the shell is your foundation for everything else in this course.\n",
-    "exercises": [
-      {
-        "id": 1,
-        "type": "quiz",
-        "title": "Shell Basics Quiz",
-        "description": "Test your understanding of Linux shell concepts",
-        "points": 10,
-        "question": "Which command displays the current working directory?",
-        "options": ["ls", "pwd", "cd", "whoami"],
-        "correct_answer": 1,
-        "hints": ["Think about what 'print working directory' abbreviates to."]
-      },
-      {
-        "id": 2,
-        "type": "quiz",
-        "title": "Filesystem Navigation",
-        "description": "Test your knowledge of filesystem navigation",
-        "points": 10,
-        "question": "What does 'cd ~' do?",
-        "options": [
-          "Changes to the root directory",
-          "Changes to the home directory",
-          "Changes to the previous directory",
-          "Lists the current directory"
-        ],
-        "correct_answer": 1,
-        "hints": ["The tilde (~) is a shortcut for a special directory."]
-      },
-      {
-        "id": 3,
-        "type": "coding",
-        "title": "Write a File Listing Script",
-        "description": "Write a bash command that lists all .py files in the current directory and its subdirectories",
-        "points": 20,
-        "starter_code": "# Write your command below\n",
-        "expected_output": "find . -name \"*.py\" -type f",
-        "hints": [
-          "Use the find command",
-          "The -name flag filters by filename pattern",
-          "The -type f flag filters for files only"
-        ]
-      }
-    ]
+    "content": "# Introduction to the Linux Shell\n\n## What is a Shell?\n\nA **shell** is a command-line interface (CLI) that provides a way to interact with the operating system. It acts as an intermediary between the user and the kernel, translating commands into system calls.\n\n### Common Shell Types\n\n| Shell | Path | Description |\n|-------|------|-------------|\n| Bash | `/bin/bash` | Bourne Again Shell - most common on Linux |\n| Zsh | `/bin/zsh` | Z Shell - default on macOS |\n| Fish | `/usr/bin/fish` | Friendly Interactive Shell |\n\n## Your First Commands\n\nLet us start with some essential commands:\n\n```bash\n# Print working directory\npwd\n\n# List files and directories\nls -la\n\n# Change directory\ncd /home/user\n\n# Create a directory\nmkdir my_hpc_project\n\n# Create a file\ntouch hello.sh\n```\n\n## Navigating the Filesystem\n\nThe Linux filesystem is organized as a tree structure starting from the root `/`:\n\n```\n/\n\u251c\u2500\u2500 home/          # User home directories\n\u2502   \u2514\u2500\u2500 user/\n\u251c\u2500\u2500 etc/           # System configuration\n\u251c\u2500\u2500 var/           # Variable data (logs, etc.)\n\u251c\u2500\u2500 tmp/           # Temporary files\n\u251c\u2500\u2500 opt/           # Optional software\n\u2514\u2500\u2500 usr/           # User programs\n    \u251c\u2500\u2500 bin/\n    \u2514\u2500\u2500 lib/\n```\n\n### Essential Navigation Commands\n\n```bash\n# Go to home directory\ncd ~\n\n# Go up one level\ncd ..\n\n# Go to previous directory\ncd -\n\n# Show directory tree\ntree -L 2\n\n# Find files\nfind /home -name \"*.sh\" -type f\n```\n\n## File Operations\n\n```bash\n# Copy files\ncp source.txt destination.txt\n\n# Move/rename files\nmv old_name.txt new_name.txt\n\n# Remove files (careful!)\nrm unwanted_file.txt\n\n# Remove directory recursively\nrm -rf old_directory/\n\n# View file contents\ncat config.yaml\nless large_log_file.log\nhead -20 output.csv\ntail -f /var/log/syslog\n```\n\n## Pro Tip: Tab Completion\n\nAlways use **Tab** for auto-completion! It saves time and prevents typos. Double-tap Tab to see all possibilities.\n\n## HPC Context\n\nIn HPC environments, you will be working extensively with the command line to:\n- Submit and monitor compute jobs\n- Manage large datasets\n- Configure software environments\n- Debug parallel applications\n\n:::interactive{component=\"GuidedLab\" config='{\"preset\":\"linux-files\"}'}\n\n> **Note**: Most HPC clusters run Linux (typically RHEL/CentOS or Ubuntu). Mastering the shell is your foundation for everything else in this course.\n"
   }
 }

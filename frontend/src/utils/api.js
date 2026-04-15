@@ -11,7 +11,6 @@ import {
   DEMO_LEARNING_PATH,
   DEMO_TEMPLATES,
   generateDemoLessonContent,
-  generateDemoExercises,
 } from '../data/demoContent';
 
 const BASE_URL = '/api';
@@ -233,7 +232,6 @@ export async function getLessonAPI(moduleId, lessonId) {
       ...lesson,
       module_id: Number(moduleId),
       content: generateDemoLessonContent(lesson, directive),
-      exercises: generateDemoExercises(lesson, lessonId),
     };
   }
   return null;
@@ -261,21 +259,6 @@ export async function completeLessonAPI(moduleId, lessonId) {
   });
   if (data) return data;
   return { success: true, message: 'Lesson marked as complete (demo)' };
-}
-
-export async function submitExerciseAPI(exerciseId, answer) {
-  if (isGuest()) return { correct: true, score: 10, feedback: 'Great job! (Guest mode — log in to save scores)', explanation: 'Log in to save your exercise scores and track progress.' };
-  const data = await apiRequest(`/exercises/${exerciseId}/submit`, {
-    method: 'POST',
-    body: JSON.stringify({ answer }),
-  });
-  if (data) return data;
-  return {
-    correct: true,
-    score: 10,
-    feedback: 'Great job! (Demo mode)',
-    explanation: 'This is a demo response. Connect the backend for real grading.',
-  };
 }
 
 // ── Dashboard & Learning Path ──

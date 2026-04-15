@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, Layers, CheckCircle2, Play, Lock, ChevronDown, ChevronUp, Target, BookOpen, Award } from 'lucide-react';
+import { ArrowLeft, Clock, Layers, CheckCircle2, Play, Lock, ChevronDown, ChevronUp, BookOpen, Award } from 'lucide-react';
 import { getModuleAPI } from '../utils/api';
 import ProgressBar from '../components/ProgressBar';
 
@@ -104,7 +104,6 @@ export default function ModuleDetail() {
                 <span style={{ fontSize: '0.9375rem', fontWeight: '600', color: '#f1f5f9', flex: 1 }}>{lesson.title}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.75rem', color: '#64748b' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Clock size={12} />{lesson.estimated_minutes}m</span>
-                  {lesson.exercise_count > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Target size={12} />{lesson.exercise_count}</span>}
                 </div>
                 {isExpanded ? <ChevronUp size={18} color="#64748b" /> : <ChevronDown size={18} color="#64748b" />}
               </div>

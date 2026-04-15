@@ -251,12 +251,6 @@ code { font-family: var(--font-mono); font-size: 0.875em; }
   }
 }
 
-/* --- Exercise panel responsive --- */
-@media (max-width: 900px) {
-  .lesson-layout { flex-direction: column !important; }
-  .exercise-sidebar { width: 100% !important; max-width: 100% !important; position: static !important; max-height: none !important; }
-}
-
 /* --- Dashboard responsive --- */
 @media (max-width: 900px) {
   .dashboard-grid { grid-template-columns: 1fr !important; }

@@ -1,13 +1,8 @@
 // Demo data generators — separated from API logic
-// Pure functions that generate lesson content and exercises from data
+// Pure functions that generate lesson content from data
 
 import DEMO_USER from './demoUser.json';
 import DEMO_MODULES from './modules.json';
-import { LESSON_EXERCISES } from './exerciseData';
-import { LESSON_EXERCISES_2 } from './exerciseData2';
-
-// Merge both exercise maps
-const ALL_EXERCISES = { ...LESSON_EXERCISES, ...LESSON_EXERCISES_2 };
 
 // ── Dashboard ──
 
@@ -55,7 +50,7 @@ export function generateDemoLessonContent(lesson, interactiveDirective) {
 
 ## Overview
 
-This lesson provides **hands-on, practical training** in ${lesson.title.toLowerCase()}. You'll work through interactive exercises, run real code, and build skills directly applicable to production HPC systems.
+This lesson provides **hands-on, practical training** in ${lesson.title.toLowerCase()}. You'll work through interactive labs, run real simulations, and build skills directly applicable to production HPC systems.
 
 ### Learning Objectives
 
@@ -75,7 +70,7 @@ ${interactiveDirective}
 
 ${lesson.objectives?.map((o, i) => `### ${i + 1}. ${o}
 
-This is a core skill you'll need on production HPC systems. The interactive exercises in the sidebar will test your understanding with real code challenges.
+This is a core skill you'll need on production HPC systems. The interactive lab will help you build hands-on experience.
 
 `).join('') || ''}
 
@@ -100,52 +95,12 @@ if __name__ == "__main__":
     main()
 \`\`\`
 
-> **Pro tip:** Complete all exercises in the sidebar panel to earn full marks. Each exercise tests a specific skill you'll use in production.
+> **Pro tip:** Complete all tasks in the interactive lab to build hands-on skills. Each task tests a specific skill you'll use in production.
 
 ## Summary
 
-In this lesson, you gained practical experience with ${lesson.title.toLowerCase()}. The interactive simulations and coding exercises above mirror real HPC workflows. Continue to the next lesson to build on these skills.
+In this lesson, you gained practical experience with ${lesson.title.toLowerCase()}. The interactive labs and simulations above mirror real HPC workflows. Continue to the next lesson to build on these skills.
 `;
-}
-
-// ── Exercise Generator ──
-
-export function generateDemoExercises(lesson, lessonId) {
-  // Use expert-crafted exercises if available
-  const expertExercises = ALL_EXERCISES[Number(lessonId)];
-  if (expertExercises && expertExercises.length > 0) {
-    return expertExercises;
-  }
-
-  // Fallback for lessons without expert data
-  const baseId = 100 + Number(lessonId);
-  return [
-    {
-      id: baseId,
-      type: 'quiz',
-      title: `${lesson.title} — Concept Check`,
-      description: 'Test your understanding of the core concepts.',
-      points: 10,
-      question: `Which of the following is a key concept in ${lesson.title}?`,
-      options: (lesson.objectives || []).slice(0, 4).map(o => o.substring(0, 60)),
-      correct_answer: 0,
-      hints: ['Review the learning objectives at the top of this lesson.', 'Think about which concept is most fundamental to this topic.'],
-    },
-    {
-      id: baseId + 1,
-      type: 'coding',
-      title: `${lesson.title} — Coding Challenge`,
-      description: `Write a Python function that demonstrates a key concept from ${lesson.title.toLowerCase()}. Your code should print results that can be verified.`,
-      points: 25,
-      starter_code: `# ${lesson.title} — Coding Challenge\n# Write your solution below\nimport os\nimport sys\n\ndef solve():\n    """Implement your solution here."""\n    # TODO: Your code here\n    print("Hello from ${lesson.title}")\n    return True\n\nif __name__ == "__main__":\n    result = solve()\n    print(f"Result: {result}")`,
-      test_cases: [
-        { label: 'Test 1: Function runs', input: '', expected_output: 'Hello from', hidden: false },
-        { label: 'Test 2: Returns True', input: '', expected_output: 'Result: True', hidden: false },
-      ],
-      hints: ['Start by reading the existing code and understanding what it does.', 'Make sure your function prints output and returns a value.', 'Check the test cases to see what output is expected.'],
-      solution: `import os\nimport sys\n\ndef solve():\n    print("Hello from ${lesson.title}")\n    return True\n\nif __name__ == "__main__":\n    result = solve()\n    print(f"Result: {result}")`,
-    },
-  ];
 }
 
 // ── Sandbox Templates ──
