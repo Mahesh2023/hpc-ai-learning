@@ -1,13 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { ArrowLeft, ArrowRight, CheckCircle2, Target, ChevronRight, PanelRightOpen, PanelRightClose, BookOpen, Clock } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Target, ChevronRight, BookOpen, Clock, Zap, FileText } from 'lucide-react';
 import { getLessonAPI, getModuleAPI, completeLessonAPI } from '../utils/api';
 import ExercisePanel from '../components/ExercisePanel';
 import BookmarkButton from '../components/BookmarkButton';
 import { InteractiveComponent, parseInteractiveContent } from '../components/InteractiveComponents';
+
+const LabWorkspace = lazy(() => import('../components/LabWorkspace'));
+
+// Import lab scenarios — falls back to empty if file doesn't exist
+import { LAB_SCENARIOS } from '../data/labScenarios';
 
 /**
  * Enhanced MarkdownRenderer that supports inline interactive components.
@@ -36,7 +41,6 @@ function MarkdownRenderer({ content }) {
                     {...props}>{String(children).replace(/\n$/, '')}</SyntaxHighlighter>
                 ) : (<code className={className} {...props}>{children}</code>);
               },
-              // Enhanced tables for curriculum content
               table({ children }) {
                 return (
                   <div style={{ overflowX: 'auto', margin: '1rem 0' }}>
@@ -50,7 +54,6 @@ function MarkdownRenderer({ content }) {
               td({ children }) {
                 return <td style={{ padding: '0.5rem 1rem', borderBottom: '1px solid #1e293b', color: '#94a3b8' }}>{children}</td>;
               },
-              // Callout blocks for important information
               blockquote({ children }) {
                 return (
                   <div style={{ margin: '1.25rem 0', padding: '1rem 1.25rem', borderLeft: '3px solid #8b5cf6', background: 'rgba(139,92,246,0.05)', borderRadius: '0 8px 8px 0', color: '#c4b5fd', fontSize: '0.875rem', lineHeight: '1.7' }}>
@@ -58,22 +61,18 @@ function MarkdownRenderer({ content }) {
                   </div>
                 );
               },
-              // Headings with anchor links
               h2({ children }) {
                 return <h2 style={{ fontSize: '1.375rem', fontWeight: '800', color: '#f1f5f9', marginTop: '2.5rem', marginBottom: '1rem', paddingBottom: '0.5rem', borderBottom: '1px solid #334155' }}>{children}</h2>;
               },
               h3({ children }) {
                 return <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: '#e2e8f0', marginTop: '2rem', marginBottom: '0.75rem' }}>{children}</h3>;
               },
-              // Enhanced list items
               li({ children }) {
                 return <li style={{ color: '#94a3b8', lineHeight: '1.8', marginBottom: '0.25rem' }}>{children}</li>;
               },
-              // Paragraph styling
               p({ children }) {
                 return <p style={{ color: '#94a3b8', lineHeight: '1.8', marginBottom: '1rem' }}>{children}</p>;
               },
-              // Strong/emphasis
               strong({ children }) {
                 return <strong style={{ color: '#f1f5f9', fontWeight: '700' }}>{children}</strong>;
               },
@@ -88,15 +87,44 @@ function MarkdownRenderer({ content }) {
   );
 }
 
+const TAB_STYLES = {
+  container: {
+    display: 'flex',
+    gap: '0.25rem',
+    padding: '0.25rem',
+    background: '#0f172a',
+    borderRadius: '12px',
+    border: '1px solid #334155',
+  },
+  tab: (active) => ({
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.625rem 1.25rem',
+    fontSize: '0.875rem',
+    fontWeight: active ? '700' : '500',
+    color: active ? '#0f172a' : '#94a3b8',
+    background: active ? 'linear-gradient(135deg, #06b6d4, #14b8a6)' : 'transparent',
+    border: 'none',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    transition: 'all 200ms ease',
+    boxShadow: active ? '0 2px 8px rgba(6,182,212,0.3)' : 'none',
+  }),
+};
+
 export default function LessonViewer() {
   const { id: moduleId, lessonId } = useParams();
   const navigate = useNavigate();
   const [lesson, setLesson] = useState(null);
   const [mod, setMod] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showExercises, setShowExercises] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [completed, setCompleted] = useState(false);
+
+  // Lab is the default tab when a lab scenario exists
+  const scenario = LAB_SCENARIOS[Number(lessonId)];
+  const [activeTab, setActiveTab] = useState(scenario ? 'lab' : 'read');
 
   useEffect(() => {
     setLoading(true);
@@ -110,6 +138,12 @@ export default function LessonViewer() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [moduleId, lessonId]);
+
+  // Reset tab when navigating between lessons
+  useEffect(() => {
+    const s = LAB_SCENARIOS[Number(lessonId)];
+    setActiveTab(s ? 'lab' : 'read');
+  }, [lessonId]);
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}><div className="loading-spinner" /></div>;
 
@@ -127,7 +161,6 @@ export default function LessonViewer() {
   const currentIdx = lessons.findIndex((l) => l.id === Number(lessonId));
   const prevLesson = currentIdx > 0 ? lessons[currentIdx - 1] : null;
   const nextLesson = currentIdx < lessons.length - 1 ? lessons[currentIdx + 1] : null;
-  const exerciseCount = (lesson.exercises || []).length;
 
   const handleComplete = async () => {
     setCompleting(true);
@@ -137,92 +170,115 @@ export default function LessonViewer() {
   };
 
   return (
-    <div className="lesson-layout" style={{ display: 'flex', gap: '1.5rem', maxWidth: '1400px', margin: '0 auto', animation: 'fadeIn 0.4s ease-out', minHeight: 'calc(100vh - 4rem)' }}>
-      {/* Content Pane */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Breadcrumb */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', fontSize: '0.8125rem', color: '#64748b', flexWrap: 'wrap' }}>
-          <Link to="/modules" style={{ color: '#94a3b8', textDecoration: 'none', fontWeight: '500' }}>Modules</Link>
-          <ChevronRight size={14} />
-          <Link to={'/modules/' + moduleId} style={{ color: '#94a3b8', textDecoration: 'none', fontWeight: '500' }}>{mod?.title || 'Module'}</Link>
-          <ChevronRight size={14} />
-          <span style={{ color: '#f1f5f9', fontWeight: '600' }}>{lesson.title}</span>
-          <BookmarkButton moduleId={moduleId} lessonId={lessonId} lessonTitle={lesson.title} moduleName={mod?.title} />
+    <div style={{ maxWidth: '1500px', margin: '0 auto', animation: 'fadeIn 0.4s ease-out' }}>
+      {/* Breadcrumb */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', fontSize: '0.8125rem', color: '#64748b', flexWrap: 'wrap' }}>
+        <Link to="/modules" style={{ color: '#94a3b8', textDecoration: 'none', fontWeight: '500' }}>Modules</Link>
+        <ChevronRight size={14} />
+        <Link to={'/modules/' + moduleId} style={{ color: '#94a3b8', textDecoration: 'none', fontWeight: '500' }}>{mod?.title || 'Module'}</Link>
+        <ChevronRight size={14} />
+        <span style={{ color: '#f1f5f9', fontWeight: '600' }}>{lesson.title}</span>
+        <BookmarkButton moduleId={moduleId} lessonId={lessonId} lessonTitle={lesson.title} moduleName={mod?.title} />
+        {completed && <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#10b981', fontSize: '0.75rem', fontWeight: '600', marginLeft: '0.5rem' }}><CheckCircle2 size={14} />Completed</span>}
+      </div>
+
+      {/* Tab switcher — Lab is primary */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+        <div style={TAB_STYLES.container}>
+          {scenario && (
+            <button style={TAB_STYLES.tab(activeTab === 'lab')} onClick={() => setActiveTab('lab')}>
+              <Zap size={16} />
+              Interactive Lab
+            </button>
+          )}
+          <button style={TAB_STYLES.tab(activeTab === 'read')} onClick={() => setActiveTab('read')}>
+            <FileText size={16} />
+            Reading
+          </button>
+          {(lesson.exercises || []).length > 0 && (
+            <button style={TAB_STYLES.tab(activeTab === 'exercises')} onClick={() => setActiveTab('exercises')}>
+              <Target size={16} />
+              Exercises ({(lesson.exercises || []).length})
+            </button>
+          )}
         </div>
 
-        {/* Top bar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.75rem', color: '#64748b' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Clock size={14} />{lesson.estimated_minutes || 45} min</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><BookOpen size={14} />Lesson {currentIdx + 1} of {lessons.length}</span>
-            {exerciseCount > 0 && <span style={{ padding: '0.125rem 0.5rem', borderRadius: '6px', background: 'rgba(16,185,129,0.1)', color: '#10b981', fontWeight: '600' }}>{exerciseCount} exercises</span>}
-          </div>
-          {completed && <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', color: '#10b981', fontSize: '0.8125rem', fontWeight: '600' }}><CheckCircle2 size={16} />Completed</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.75rem', color: '#64748b' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><Clock size={14} />{lesson.estimated_minutes || 45} min</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}><BookOpen size={14} />Lesson {currentIdx + 1}/{lessons.length}</span>
         </div>
+      </div>
 
-        {/* Objectives */}
-        {lesson.objectives && lesson.objectives.length > 0 && (
-          <div style={{ background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.15)', borderRadius: '14px', padding: '1.25rem 1.5rem', marginBottom: '2rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '700', color: '#06b6d4', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              <Target size={16} />Learning Objectives
-            </div>
-            {lesson.objectives.map((obj, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.8125rem', color: '#94a3b8', lineHeight: 1.7, padding: '0.25rem 0' }}>
-                <CheckCircle2 size={14} color="#06b6d4" style={{ flexShrink: 0, marginTop: '2px' }} />{obj}
+      {/* ── Tab Content ── */}
+
+      {/* LAB TAB — Full-width interactive workspace */}
+      {activeTab === 'lab' && scenario && (
+        <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '50vh' }}><div className="loading-spinner" /></div>}>
+          <LabWorkspace
+            scenario={scenario}
+            lessonTitle={lesson.title}
+            onComplete={() => { if (!completed) handleComplete(); }}
+          />
+        </Suspense>
+      )}
+
+      {/* READING TAB — Lesson content with inline interactive components */}
+      {activeTab === 'read' && (
+        <div style={{ maxWidth: '900px' }}>
+          {/* Objectives */}
+          {lesson.objectives && lesson.objectives.length > 0 && (
+            <div style={{ background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.15)', borderRadius: '14px', padding: '1.25rem 1.5rem', marginBottom: '2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: '700', color: '#06b6d4', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <Target size={16} />Learning Objectives
               </div>
-            ))}
+              {lesson.objectives.map((obj, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.8125rem', color: '#94a3b8', lineHeight: 1.7, padding: '0.25rem 0' }}>
+                  <CheckCircle2 size={14} color="#06b6d4" style={{ flexShrink: 0, marginTop: '2px' }} />{obj}
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '16px', padding: '2rem 2.5rem', marginBottom: '1.5rem' }}>
+            <MarkdownRenderer content={lesson.content || ''} />
           </div>
+        </div>
+      )}
+
+      {/* EXERCISES TAB — Quiz/coding/lab exercises */}
+      {activeTab === 'exercises' && (
+        <div style={{ maxWidth: '700px' }}>
+          <ExercisePanel exercises={lesson.exercises || []} />
+        </div>
+      )}
+
+      {/* Navigation Footer */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', padding: '1.25rem 0', borderTop: '1px solid #334155', marginTop: '1.5rem' }}>
+        {prevLesson ? (
+          <button style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.625rem 1.25rem', fontSize: '0.875rem', fontWeight: '600', borderRadius: '10px', border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', cursor: 'pointer', transition: 'all 150ms ease' }}
+            onClick={() => navigate('/modules/' + moduleId + '/lessons/' + prevLesson.id)}>
+            <ArrowLeft size={16} />{prevLesson.title}
+          </button>
+        ) : <div />}
+
+        {!completed && (
+          <button style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.625rem 1.5rem', fontSize: '0.875rem', fontWeight: '700', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #10b981, #14b8a6)', color: '#0f172a', cursor: 'pointer', transition: 'all 150ms ease', boxShadow: '0 2px 8px rgba(16,185,129,0.3)', opacity: completing ? 0.7 : 1 }}
+            onClick={handleComplete} disabled={completing}>
+            <CheckCircle2 size={16} />{completing ? 'Marking...' : 'Mark as Complete'}
+          </button>
         )}
 
-        {/* Content — now supports inline interactive components */}
-        <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '16px', padding: '2rem 2.5rem', marginBottom: '1.5rem' }}>
-          <MarkdownRenderer content={lesson.content || ''} />
-        </div>
-
-        {/* Navigation Footer */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', padding: '1.25rem 0', borderTop: '1px solid #334155', marginTop: '1rem' }}>
-          {prevLesson ? (
-            <button style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.625rem 1.25rem', fontSize: '0.875rem', fontWeight: '600', borderRadius: '10px', border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', cursor: 'pointer', transition: 'all 150ms ease', textDecoration: 'none' }}
-              onClick={() => navigate('/modules/' + moduleId + '/lessons/' + prevLesson.id)}>
-              <ArrowLeft size={16} />{prevLesson.title}
-            </button>
-          ) : <div />}
-
-          {!completed && (
-            <button style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.625rem 1.5rem', fontSize: '0.875rem', fontWeight: '700', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #10b981, #14b8a6)', color: '#0f172a', cursor: 'pointer', transition: 'all 150ms ease', boxShadow: '0 2px 8px rgba(16,185,129,0.3)', opacity: completing ? 0.7 : 1 }}
-              onClick={handleComplete} disabled={completing}>
-              <CheckCircle2 size={16} />{completing ? 'Marking...' : 'Mark as Complete'}
-            </button>
-          )}
-
-          {nextLesson ? (
-            <button style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.625rem 1.25rem', fontSize: '0.875rem', fontWeight: '600', borderRadius: '10px', border: '1px solid rgba(6,182,212,0.2)', background: 'rgba(6,182,212,0.05)', color: '#06b6d4', cursor: 'pointer', transition: 'all 150ms ease' }}
-              onClick={() => navigate('/modules/' + moduleId + '/lessons/' + nextLesson.id)}>
-              {nextLesson.title}<ArrowRight size={16} />
-            </button>
-          ) : (
-            <button style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.625rem 1.25rem', fontSize: '0.875rem', fontWeight: '600', borderRadius: '10px', border: '1px solid rgba(139,92,246,0.2)', background: 'rgba(139,92,246,0.05)', color: '#8b5cf6', cursor: 'pointer' }}
-              onClick={() => navigate('/modules/' + moduleId)}>
-              Back to Module<ArrowRight size={16} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Exercise Pane */}
-      <div className="exercise-sidebar" style={{ width: showExercises ? '420px' : '0', flexShrink: 0, transition: 'width 250ms ease, opacity 250ms ease', overflow: 'hidden', opacity: showExercises ? 1 : 0 }}>
-        {showExercises && (
-          <div style={{ position: 'sticky', top: '1rem', maxHeight: 'calc(100vh - 6rem)', overflowY: 'auto', background: '#1e293b', border: '1px solid #334155', borderRadius: '16px', padding: '1.25rem' }}>
-            <ExercisePanel exercises={lesson.exercises || []} />
-          </div>
+        {nextLesson ? (
+          <button style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.625rem 1.25rem', fontSize: '0.875rem', fontWeight: '600', borderRadius: '10px', border: '1px solid rgba(6,182,212,0.2)', background: 'rgba(6,182,212,0.05)', color: '#06b6d4', cursor: 'pointer', transition: 'all 150ms ease' }}
+            onClick={() => navigate('/modules/' + moduleId + '/lessons/' + nextLesson.id)}>
+            {nextLesson.title}<ArrowRight size={16} />
+          </button>
+        ) : (
+          <button style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.625rem 1.25rem', fontSize: '0.875rem', fontWeight: '600', borderRadius: '10px', border: '1px solid rgba(139,92,246,0.2)', background: 'rgba(139,92,246,0.05)', color: '#8b5cf6', cursor: 'pointer' }}
+            onClick={() => navigate('/modules/' + moduleId)}>
+            Back to Module<ArrowRight size={16} />
+          </button>
         )}
       </div>
-
-      {/* Toggle button */}
-      <button style={{ position: 'fixed', right: '1.5rem', bottom: '1.5rem', width: '48px', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg, #06b6d4, #8b5cf6)', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 16px rgba(6,182,212,0.3)', transition: 'all 200ms ease', zIndex: 30 }}
-        onClick={() => setShowExercises(!showExercises)} title={showExercises ? 'Hide exercises' : 'Show exercises'}>
-        {showExercises ? <PanelRightClose size={22} /> : <PanelRightOpen size={22} />}
-      </button>
     </div>
   );
 }
