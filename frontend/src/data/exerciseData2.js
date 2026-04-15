@@ -875,7 +875,7 @@ def calculate_training_cost(params_B, tokens_T, itype, num_inst):
     cost = wall_hours * spec["hourly"] * num_inst
     return {"model": f"{params_B}B params", "tokens": f"{tokens_T}T", "gpu_hours": f"{gpu_hours:,.0f}",
             "wall_hours": f"{wall_hours:,.0f} ({wall_hours/24:.0f} days)",
-            "total_cost": f"${cost:,.0f}", "cost_per_gpu_hour": f"${spec['hourly']/spec['gpus']:.2f}"}
+            "total_cost": f"\${cost:,.0f}", "cost_per_gpu_hour": f"\${spec['hourly']/spec['gpus']:.2f}"}
 
 if __name__ == "__main__":
     for k, v in calculate_training_cost(7, 2.0, "p4d.24xlarge", 4).items(): print(f"  {k}: {v}")`,
@@ -1594,12 +1594,12 @@ if __name__ == "__main__":
     od_cost = w["on_demand_hourly"] * w["duration_hours"] * w.get("gpu_count", 1)
     if w["type"] == "inference" and w["max_interruption_tolerance"] == 0:
         reserved_cost = od_cost * 0.4
-        return {"strategy": "Reserved (1yr)", "on_demand_cost": f"${od_cost:,.0f}", "recommended_cost": f"${reserved_cost:,.0f}", "savings": f"${od_cost-reserved_cost:,.0f} (60%)"}
+        return {"strategy": "Reserved (1yr)", "on_demand_cost": f"\${od_cost:,.0f}", "recommended_cost": f"\${reserved_cost:,.0f}", "savings": f"\${od_cost-reserved_cost:,.0f} (60%)"}
     elif w["checkpoint_capable"] and w["max_interruption_tolerance"] > 0.3:
         spot_cost = od_cost * 0.3
-        return {"strategy": "Spot + Checkpointing", "on_demand_cost": f"${od_cost:,.0f}", "recommended_cost": f"${spot_cost:,.0f}", "savings": f"${od_cost-spot_cost:,.0f} (70%)"}
+        return {"strategy": "Spot + Checkpointing", "on_demand_cost": f"\${od_cost:,.0f}", "recommended_cost": f"\${spot_cost:,.0f}", "savings": f"\${od_cost-spot_cost:,.0f} (70%)"}
     else:
-        return {"strategy": "On-Demand", "on_demand_cost": f"${od_cost:,.0f}", "recommended_cost": f"${od_cost:,.0f}", "savings": "$0 (0%)"}
+        return {"strategy": "On-Demand", "on_demand_cost": f"\${od_cost:,.0f}", "recommended_cost": f"\${od_cost:,.0f}", "savings": "$0 (0%)"}
 
 if __name__ == "__main__":
     wl = [{"name": "LLM Training", "type": "training", "duration_hours": 72, "checkpoint_capable": True, "max_interruption_tolerance": 0.8, "gpu_count": 8, "on_demand_hourly": 32.77},
@@ -1757,7 +1757,7 @@ if __name__ == "__main__":
     ]
     for s in scenarios:
         print(f"\\n{'='*50}")
-        print(f"Model: {s['model']}B | Target: {s['throughput']} t/s | Max latency: {s['latency']}ms | Budget: ${s['budget']}/hr")
+        print(f"Model: {s['model']}B | Target: {s['throughput']} t/s | Max latency: {s['latency']}ms | Budget: \${s['budget']}/hr")
         result = optimize_llm_serving(s["model"], s["throughput"], s["latency"], s["budget"], s["quant"])
         if result:
             for k, v in result.items():
@@ -1797,12 +1797,12 @@ def optimize_llm_serving(params_B, target_tps, max_lat, max_cost, quant="fp16"):
             candidates.append({**cfg, "est_tps": est_tps, "est_lat": est_lat})
     if not candidates: return None
     best = min(candidates, key=lambda c: c["cost_hr"])
-    return {"config": best["name"], "cost_per_hour": f"${best['cost_hr']:.2f}", "est_throughput": f"{best['est_tps']:.0f} t/s", "est_latency": f"{best['est_lat']:.0f} ms", "model_memory": f"{model_mem:.0f} GB ({quant})"}
+    return {"config": best["name"], "cost_per_hour": f"\${best['cost_hr']:.2f}", "est_throughput": f"{best['est_tps']:.0f} t/s", "est_latency": f"{best['est_lat']:.0f} ms", "model_memory": f"{model_mem:.0f} GB ({quant})"}
 
 if __name__ == "__main__":
     for s in [{"model":7,"throughput":500,"latency":200,"budget":10,"quant":"fp16"},{"model":70,"throughput":1000,"latency":500,"budget":50,"quant":"awq"},{"model":70,"throughput":2000,"latency":200,"budget":100,"quant":"fp16"}]:
         print(f"\\n{'='*50}")
-        print(f"Model: {s['model']}B | Target: {s['throughput']} t/s | Max latency: {s['latency']}ms | Budget: ${s['budget']}/hr")
+        print(f"Model: {s['model']}B | Target: {s['throughput']} t/s | Max latency: {s['latency']}ms | Budget: \${s['budget']}/hr")
         r = optimize_llm_serving(s["model"], s["throughput"], s["latency"], s["budget"], s["quant"])
         if r:
             for k, v in r.items(): print(f"  {k}: {v}")
