@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { ArrowLeft, ArrowRight, CheckCircle2, ChevronRight, BookOpen, Clock, Zap, FileText } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Target, ChevronRight, BookOpen, Clock, Zap, FileText } from 'lucide-react';
 import { getLessonAPI, getModuleAPI, completeLessonAPI } from '../utils/api';
 import BookmarkButton from '../components/BookmarkButton';
 import { InteractiveComponent, parseInteractiveContent } from '../components/InteractiveComponents';

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, Layers, CheckCircle2, Play, Lock, ChevronDown, ChevronUp, BookOpen, Award } from 'lucide-react';
+import { ArrowLeft, Clock, Layers, CheckCircle2, Play, Lock, ChevronDown, ChevronUp, Target, BookOpen, Award } from 'lucide-react';
 import { getModuleAPI } from '../utils/api';
 import ProgressBar from '../components/ProgressBar';
 
